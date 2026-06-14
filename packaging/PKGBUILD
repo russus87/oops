@@ -1,0 +1,39 @@
+# PKGBUILD per Oops — genera un pacchetto Arch .pkg.tar.zst.
+# Pensato per la CI: la versione viene iniettata da release.yml (sed su pkgver).
+# Compila dal sorgente già presente nel repo e impacchetta il binario.
+pkgname=oops
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Interfaccia grafica moderna per Git (Rust + Tauri + Svelte)"
+arch=('x86_64')
+url="https://github.com/russus87/oops"
+license=('MIT')
+# Dipendenze a runtime: webkit per la finestra Tauri, gtk3 per la UI nativa.
+depends=('webkit2gtk-4.1' 'gtk3')
+# cmake/openssl servono a compilare libgit2 (vendored) usato dal core.
+makedepends=('rust' 'cargo' 'nodejs' 'npm' 'base-devel' 'cmake' 'openssl')
+options=('!strip' '!lto')
+
+# Il PKGBUILD sta in packaging/, quindi la root del repo è la cartella superiore.
+_repo() { echo "$startdir/.."; }
+
+build() {
+    cd "$(_repo)"
+    npm install
+    # IMPORTANTE: si compila con la CLI di Tauri (non con cargo diretto), così
+    # l'app è in modalità produzione e incorpora il frontend nel binario.
+    # --no-bundle: niente installer, il pacchetto lo fa makepkg.
+    npm run tauri build -- --no-bundle
+}
+
+package() {
+    cd "$(_repo)"
+    # In un workspace Cargo il binario finisce in target/ alla root del repo.
+    install -Dm755 "target/release/oops" "$pkgdir/usr/bin/oops"
+    install -Dm644 "packaging/oops.desktop" \
+        "$pkgdir/usr/share/applications/oops.desktop"
+    install -Dm644 "src-tauri/icons/128x128.png" \
+        "$pkgdir/usr/share/icons/hicolor/128x128/apps/oops.png"
+    install -Dm644 "src-tauri/icons/icon.png" \
+        "$pkgdir/usr/share/icons/hicolor/512x512/apps/oops.png"
+}

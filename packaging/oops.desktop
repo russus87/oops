@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Oops
+Comment=Interfaccia grafica moderna per Git
+Exec=oops
+Icon=oops
+Terminal=false
+Categories=Development;RevisionControl;Utility;
+Keywords=git;commit;branch;diff;merge;versioning;

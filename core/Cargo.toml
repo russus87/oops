@@ -1,0 +1,16 @@
+# Crate "core": tutta la logica Git riutilizzabile, senza dipendenze da Tauri.
+# Così potrà essere usata anche da un eventuale server o da una CLI.
+[package]
+name = "oops-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Binding di libgit2: tutto Git passa da qui. Compiliamo libgit2 noi stessi
+# (vendored) per non dipendere dalla versione di sistema; serve cmake in CI.
+git2 = { version = "0.20", features = ["vendored-libgit2"] }
+
+[dev-dependencies]
+tempfile = "3"

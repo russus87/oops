@@ -1,0 +1,5 @@
+# Workspace Cargo di Oops: la logica (core) e l'app desktop (src-tauri).
+# Stessa struttura di oxiterm: il "core" è Rust puro e non dipende da Tauri.
+[workspace]
+members = ["core", "src-tauri"]
+resolver = "2"

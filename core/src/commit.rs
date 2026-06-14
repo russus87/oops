@@ -1,0 +1,136 @@
+//! Cronologia (log) e creazione di commit.
+
+use git2::{Repository, Signature, Sort};
+
+use crate::model::VoceLog;
+
+/// Legge la cronologia dei commit a partire da HEAD (i più recenti prima).
+/// `limite` = quanti commit al massimo restituire.
+pub fn log(percorso: &str, limite: usize) -> Result<Vec<VoceLog>, String> {
+    let repo = crate::apri(percorso)?;
+
+    // Repo senza commit: cronologia vuota, non è un errore.
+    if repo.head().is_err() {
+        return Ok(Vec::new());
+    }
+
+    let mut walk = repo.revwalk().map_err(|e| e.to_string())?;
+    walk.push_head().map_err(|e| e.to_string())?;
+    walk.set_sorting(Sort::TIME).map_err(|e| e.to_string())?;
+
+    let mut voci = Vec::new();
+    for oid in walk.take(limite) {
+        let oid = oid.map_err(|e| e.to_string())?;
+        let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+        voci.push(in_voce(&commit));
+    }
+    Ok(voci)
+}
+
+/// Trasforma un commit di git2 nella nostra VoceLog (con data leggibile).
+fn in_voce(commit: &git2::Commit) -> VoceLog {
+    let autore = commit.author();
+    let id = commit.id().to_string();
+    VoceLog {
+        id_breve: id.chars().take(7).collect(),
+        id,
+        titolo: commit.summary().unwrap_or("(senza messaggio)").to_string(),
+        autore: autore.name().unwrap_or("?").to_string(),
+        email: autore.email().unwrap_or("").to_string(),
+        data: data_leggibile(commit.time().seconds()),
+        genitori: commit
+            .parent_ids()
+            .map(|p| p.to_string().chars().take(7).collect())
+            .collect(),
+    }
+}
+
+/// Converte un timestamp Unix in "AAAA-MM-GG HH:MM" (ora locale approssimata UTC).
+/// Calcolo manuale per non aggiungere dipendenze (chrono) al core.
+fn data_leggibile(secondi: i64) -> String {
+    // Giorni dall'epoca e secondi nel giorno.
+    let giorni = secondi.div_euclid(86_400);
+    let resto = secondi.rem_euclid(86_400);
+    let (ore, min) = (resto / 3600, (resto % 3600) / 60);
+
+    // Algoritmo civile (Howard Hinnant) per data da giorni dall'epoca.
+    let z = giorni + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let anno = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let giorno = doy - (153 * mp + 2) / 5 + 1;
+    let mese = if mp < 10 { mp + 3 } else { mp - 9 };
+    let anno = if mese <= 2 { anno + 1 } else { anno };
+
+    format!("{anno:04}-{mese:02}-{giorno:02} {ore:02}:{min:02}")
+}
+
+/// Crea un commit con i file attualmente in staging.
+/// `nome`/`email` possono essere vuoti: in quel caso si usa la config di Git.
+pub fn crea(percorso: &str, messaggio: &str, nome: &str, email: &str) -> Result<String, String> {
+    if messaggio.trim().is_empty() {
+        return Err("il messaggio del commit non può essere vuoto".into());
+    }
+    let repo = crate::apri(percorso)?;
+
+    // Costruisce l'albero dai contenuti dell'indice (staging).
+    let mut index = repo.index().map_err(|e| e.to_string())?;
+    let albero_id = index.write_tree().map_err(|e| e.to_string())?;
+    let albero = repo.find_tree(albero_id).map_err(|e| e.to_string())?;
+
+    let firma = firma(&repo, nome, email)?;
+
+    // Genitore = commit attuale (se esiste); altrimenti è il primo commit.
+    let genitore = repo
+        .head()
+        .ok()
+        .and_then(|h| h.peel_to_commit().ok());
+    let genitori: Vec<&git2::Commit> = genitore.iter().collect();
+
+    let oid = repo
+        .commit(Some("HEAD"), &firma, &firma, messaggio, &albero, &genitori)
+        .map_err(|e| e.to_string())?;
+    Ok(oid.to_string())
+}
+
+/// Prepara la firma (autore/committer). Se nome/email sono vuoti prova a
+/// leggerli dalla configurazione di Git; come ultima spiaggia usa un default.
+fn firma<'a>(repo: &Repository, nome: &'a str, email: &'a str) -> Result<Signature<'a>, String> {
+    if !nome.trim().is_empty() && !email.trim().is_empty() {
+        return Signature::now(nome, email).map_err(|e| e.to_string());
+    }
+    repo.signature()
+        .or_else(|_| Signature::now("Oops", "oops@local"))
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn primo_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().to_str().unwrap();
+        Repository::init(dir.path()).unwrap();
+
+        fs::write(dir.path().join("a.txt"), "contenuto").unwrap();
+        crate::stage::aggiungi(p, "a.txt").unwrap();
+        crea(p, "primo commit", "Tester", "t@t.it").unwrap();
+
+        let voci = log(p, 10).unwrap();
+        assert_eq!(voci.len(), 1);
+        assert_eq!(voci[0].titolo, "primo commit");
+        assert_eq!(voci[0].autore, "Tester");
+    }
+
+    #[test]
+    fn data_nota() {
+        // 2021-01-01 00:00:00 UTC = 1609459200
+        assert_eq!(data_leggibile(1_609_459_200), "2021-01-01 00:00");
+    }
+}

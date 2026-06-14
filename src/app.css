@@ -1,0 +1,580 @@
+/* Tema di Oops: scuro, moderno, con un accento corallo "scherzoso".
+   L'idea è un'interfaccia Git amichevole, che non spaventa quando sbagli. */
+:root {
+  --sfondo: #16161e;
+  --sfondo2: #1d1d28;
+  --sfondo3: #262633;
+  --bordo: #33333f;
+  --testo: #e6e6ef;
+  --testo2: #9a9ab0;
+  --accento: #ff6b6b; /* corallo "oops" */
+  --accento2: #ff8787;
+  --ok: #51cf66;
+  --avviso: #ffd43b;
+  --pericolo: #ff6b6b;
+  --blu: #5c7cfa;
+  --giallo: #ffd43b;
+  --radius: 8px;
+}
+
+:root[data-tema="chiaro"] {
+  --sfondo: #f6f6fa;
+  --sfondo2: #ededf3;
+  --sfondo3: #e2e2ea;
+  --bordo: #d2d2dc;
+  --testo: #1d1d28;
+  --testo2: #66667a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--sfondo);
+  color: var(--testo);
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+}
+
+button {
+  font: inherit;
+  color: var(--testo);
+  background: var(--sfondo3);
+  border: 1px solid var(--bordo);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, transform 0.05s;
+}
+button:hover {
+  background: #30303f;
+}
+button:active {
+  transform: translateY(1px);
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+button.primario {
+  background: var(--accento);
+  border-color: var(--accento);
+  color: #1a0d0d;
+  font-weight: 600;
+}
+button.primario:hover {
+  background: var(--accento2);
+}
+button.pericolo {
+  color: #ffb3b3;
+}
+button.fantasma {
+  background: transparent;
+  border-color: transparent;
+}
+button.fantasma:hover {
+  background: var(--sfondo3);
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: var(--testo);
+  background: var(--sfondo);
+  border: 1px solid var(--bordo);
+  border-radius: var(--radius);
+  padding: 7px 10px;
+  width: 100%;
+}
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accento);
+}
+textarea {
+  resize: vertical;
+  font-family: inherit;
+}
+
+/* ---------- Schermata di avvio ---------- */
+.avvio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  gap: 24px;
+  padding: 40px;
+}
+.avvio .marchio {
+  text-align: center;
+}
+.avvio .marchio h1 {
+  font-size: 52px;
+  margin: 0;
+  letter-spacing: -2px;
+}
+.avvio .marchio h1 .punto {
+  color: var(--accento);
+}
+.avvio .marchio p {
+  color: var(--testo2);
+  margin: 6px 0 0;
+  font-size: 15px;
+}
+.avvio .azioni {
+  display: flex;
+  gap: 10px;
+}
+.avvio .azioni button {
+  padding: 10px 18px;
+}
+.avvio .recenti {
+  width: 480px;
+  max-width: 90vw;
+}
+.avvio .recenti h3 {
+  color: var(--testo2);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 8px;
+}
+.recente {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--bordo);
+  border-radius: var(--radius);
+  margin-bottom: 6px;
+  cursor: pointer;
+  background: var(--sfondo2);
+}
+.recente:hover {
+  border-color: var(--accento);
+}
+.recente .nome {
+  font-weight: 600;
+}
+.recente .perc {
+  color: var(--testo2);
+  font-size: 11px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recente .x {
+  opacity: 0;
+  padding: 2px 8px;
+}
+.recente:hover .x {
+  opacity: 1;
+}
+
+/* ---------- Area di lavoro ---------- */
+.app {
+  display: grid;
+  grid-template-columns: 250px 1fr;
+  height: 100vh;
+}
+
+/* ---- Sidebar ---- */
+.sidebar {
+  background: var(--sfondo2);
+  border-right: 1px solid var(--bordo);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sidebar .logo {
+  padding: 14px 16px;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  border-bottom: 1px solid var(--bordo);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sidebar .logo .punto {
+  color: var(--accento);
+}
+.sezione {
+  padding: 10px 12px 4px;
+}
+.sezione .titolo {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--testo2);
+  font-weight: 700;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.sezione .titolo button {
+  padding: 0 7px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.lista-rami {
+  flex: 1;
+  overflow-y: auto;
+}
+.ramo {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  cursor: pointer;
+  border-radius: 6px;
+  margin: 1px 6px;
+}
+.ramo:hover {
+  background: var(--sfondo3);
+}
+.ramo.corrente {
+  background: var(--sfondo3);
+  font-weight: 600;
+}
+.ramo .icona {
+  width: 14px;
+  text-align: center;
+  color: var(--testo2);
+}
+.ramo.corrente .icona {
+  color: var(--accento);
+}
+.ramo .nome {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ramo .ops {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+}
+.ramo:hover .ops {
+  opacity: 1;
+}
+.ramo .ops button {
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+/* ---- Principale ---- */
+.principale {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--sfondo2);
+  border-bottom: 1px solid var(--bordo);
+}
+.toolbar .repo {
+  font-weight: 700;
+  font-size: 14px;
+}
+.toolbar .ramo-attivo {
+  color: var(--testo2);
+  font-size: 12px;
+}
+.toolbar .spazio {
+  flex: 1;
+}
+.toolbar .sincro {
+  display: flex;
+  gap: 6px;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--testo2);
+  margin-left: 4px;
+}
+
+.tabs {
+  display: flex;
+  background: var(--sfondo2);
+  border-bottom: 1px solid var(--bordo);
+}
+.tabs .tab {
+  padding: 9px 18px;
+  cursor: pointer;
+  color: var(--testo2);
+  border-bottom: 2px solid transparent;
+}
+.tabs .tab.attivo {
+  color: var(--testo);
+  border-bottom-color: var(--accento);
+}
+
+.contenuto {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ---- Vista Modifiche: lista a sinistra, diff a destra ---- */
+.modifiche {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  height: 100%;
+}
+.pannello-modifiche {
+  border-right: 1px solid var(--bordo);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.gruppo-file {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.gruppo-file .intestazione {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--testo2);
+  font-weight: 700;
+  background: var(--sfondo2);
+  border-bottom: 1px solid var(--bordo);
+}
+.gruppo-file .lista {
+  overflow-y: auto;
+  max-height: 38vh;
+}
+.riga-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.riga-file:hover {
+  background: var(--sfondo3);
+}
+.riga-file.scelto {
+  background: var(--sfondo3);
+}
+.riga-file .stato {
+  width: 16px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 12px;
+}
+.riga-file .stato.nuovo {
+  color: var(--ok);
+}
+.riga-file .stato.modificato {
+  color: var(--giallo);
+}
+.riga-file .stato.cancellato {
+  color: var(--pericolo);
+}
+.riga-file .stato.rinominato,
+.riga-file .stato.tipocambiato {
+  color: var(--blu);
+}
+.riga-file .stato.conflitto {
+  color: var(--accento);
+}
+.riga-file .nome {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.riga-file .ops {
+  display: flex;
+  gap: 3px;
+  opacity: 0;
+}
+.riga-file:hover .ops {
+  opacity: 1;
+}
+.riga-file .ops button {
+  padding: 0 7px;
+}
+
+/* Riquadro del commit in fondo */
+.commit-box {
+  margin-top: auto;
+  border-top: 1px solid var(--bordo);
+  padding: 12px;
+  background: var(--sfondo2);
+}
+.commit-box textarea {
+  min-height: 70px;
+  margin-bottom: 8px;
+}
+
+/* ---- Vista Cronologia ---- */
+.cronologia {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 100%;
+}
+.lista-commit {
+  border-right: 1px solid var(--bordo);
+  overflow-y: auto;
+}
+.voce-commit {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--bordo);
+  cursor: pointer;
+}
+.voce-commit:hover {
+  background: var(--sfondo2);
+}
+.voce-commit.scelto {
+  background: var(--sfondo3);
+}
+.voce-commit .titolo {
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+.voce-commit .meta {
+  display: flex;
+  gap: 8px;
+  color: var(--testo2);
+  font-size: 11px;
+}
+.voce-commit .hash {
+  color: var(--accento2);
+  font-family: ui-monospace, "Cascadia Code", monospace;
+}
+.voce-commit .merge {
+  color: var(--blu);
+}
+
+/* ---- Vista Diff ---- */
+.diff {
+  overflow: auto;
+  height: 100%;
+  background: var(--sfondo);
+}
+.diff pre {
+  margin: 0;
+  padding: 8px 0;
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.diff .riga {
+  display: block;
+  padding: 0 14px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.diff .riga.agg {
+  background: rgba(81, 207, 102, 0.13);
+  color: #b2f2bb;
+}
+.diff .riga.rim {
+  background: rgba(255, 107, 107, 0.13);
+  color: #ffc9c9;
+}
+.diff .riga.testa {
+  color: var(--blu);
+}
+.diff .riga.info {
+  color: var(--testo2);
+}
+.diff-vuoto,
+.lista-vuota {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--testo2);
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px;
+  text-align: center;
+}
+
+/* ---------- Overlay / modali ---------- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+}
+.modale {
+  background: var(--sfondo2);
+  border: 1px solid var(--bordo);
+  border-radius: 12px;
+  padding: 22px;
+  width: 420px;
+  max-width: 92vw;
+}
+.modale h2 {
+  margin: 0 0 16px;
+  font-size: 18px;
+}
+.campo {
+  margin-bottom: 12px;
+}
+.campo label {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--testo2);
+  font-size: 12px;
+}
+.modale .pulsanti {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+/* ---------- Toast ---------- */
+.toast {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--sfondo3);
+  border: 1px solid var(--bordo);
+  border-left: 3px solid var(--accento);
+  border-radius: var(--radius);
+  padding: 10px 16px;
+  z-index: 40;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+  max-width: 80vw;
+}
+.toast.errore {
+  border-left-color: var(--pericolo);
+}
+.toast.ok {
+  border-left-color: var(--ok);
+}
