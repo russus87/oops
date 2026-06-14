@@ -1,7 +1,22 @@
 // Versione dell'app e changelog, mostrati nel pannello Info.
-export const VERSIONE = "0.2.0";
+export const VERSIONE = "0.3.0";
 
 export const changelog = [
+  {
+    versione: "0.3.0",
+    note: [
+      "Risoluzione conflitti: tieni nostra/loro o segna risolto, e annulla l'operazione",
+      "Rebase del ramo corrente su un altro ramo",
+      "Revert di un commit; checkout di un commit; crea ramo da un commit",
+      "Blame riga per riga e cronologia per singolo file",
+      "Diff affiancato (side-by-side) oltre a quello unificato",
+      "Decorazioni: rami e tag mostrati sui commit nella cronologia",
+      "Gestione remoti (aggiungi/modifica/rimuovi) + push --force e push tag",
+      "Elimina ramo sul remoto",
+      "Scarta tutto e pulisci i file non tracciati",
+      "Pannello Impostazioni con tema chiaro/scuro e info/changelog",
+    ],
+  },
   {
     versione: "0.2.0",
     note: [

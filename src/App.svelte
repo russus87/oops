@@ -7,29 +7,12 @@
   import BarraLaterale from "./components/BarraLaterale.svelte";
   import Modifiche from "./components/Modifiche.svelte";
   import Cronologia from "./components/Cronologia.svelte";
+  import Impostazioni from "./components/Impostazioni.svelte";
 
   let vista = $state("modifiche"); // "modifiche" | "cronologia"
   let info = $state(null); // StatoRepo, serve alla toolbar per avanti/indietro
-  let mostraConfig = $state(false);
-  let cfgNome = $state("");
-  let cfgEmail = $state("");
-
-  async function apriConfig() {
-    const c = await api.configUtente(stato.percorso).catch(() => ({ nome: "", email: "" }));
-    cfgNome = c.nome;
-    cfgEmail = c.email;
-    mostraConfig = true;
-  }
-
-  async function salvaConfig() {
-    try {
-      await api.impostaConfigUtente(stato.percorso, cfgNome, cfgEmail);
-      mostraConfig = false;
-      stato.avvisa("Autore impostato", "ok");
-    } catch (e) {
-      stato.avvisa("Salvataggio fallito: " + e, "errore");
-    }
-  }
+  let mostraImpostazioni = $state(false);
+  let menuPush = $state(false);
 
   $effect(() => {
     stato.tic;
@@ -56,6 +39,8 @@
   const fetch = () => azioneRete((p) => api.fetch(p), "Fetch");
   const pull = () => azioneRete((p) => api.pull(p), "Pull");
   const push = () => azioneRete((p) => api.push(p), "Push");
+  const pushForza = () => { menuPush = false; azioneRete((p) => api.pushForza(p), "Push forzato"); };
+  const pushTags = () => { menuPush = false; azioneRete((p) => api.pushTags(p), "Push tag"); };
 </script>
 
 {#if !stato.percorso}
@@ -76,8 +61,17 @@
         <div class="sincro">
           <button onclick={fetch} disabled={stato.occupato}>Fetch</button>
           <button onclick={pull} disabled={stato.occupato}>Pull</button>
-          <button class="primario" onclick={push} disabled={stato.occupato}>Push</button>
-          <button class="fantasma" title="Imposta autore (nome/email)" onclick={apriConfig}>⚙</button>
+          <div class="menu-wrap">
+            <button class="primario" onclick={push} disabled={stato.occupato}>Push</button>
+            <button class="fantasma" title="Altre opzioni di push" onclick={() => (menuPush = !menuPush)}>▾</button>
+            {#if menuPush}
+              <div class="menu">
+                <button onclick={pushForza}>Push --force</button>
+                <button onclick={pushTags}>Push delle tag</button>
+              </div>
+            {/if}
+          </div>
+          <button class="fantasma" title="Impostazioni" onclick={() => (mostraImpostazioni = true)}>⚙</button>
         </div>
       </div>
 
@@ -101,24 +95,8 @@
   </div>
 {/if}
 
-{#if mostraConfig}
-  <div class="overlay" onclick={() => (mostraConfig = false)}>
-    <div class="modale" onclick={(e) => e.stopPropagation()}>
-      <h2>Autore dei commit</h2>
-      <div class="campo">
-        <label for="cn">Nome</label>
-        <input id="cn" bind:value={cfgNome} placeholder="Mario Rossi" />
-      </div>
-      <div class="campo">
-        <label for="ce">Email</label>
-        <input id="ce" bind:value={cfgEmail} placeholder="mario@esempio.it" />
-      </div>
-      <div class="pulsanti">
-        <button onclick={() => (mostraConfig = false)}>Annulla</button>
-        <button class="primario" onclick={salvaConfig}>Salva</button>
-      </div>
-    </div>
-  </div>
+{#if mostraImpostazioni}
+  <Impostazioni chiudi={() => (mostraImpostazioni = false)} />
 {/if}
 
 {#if stato.nota}

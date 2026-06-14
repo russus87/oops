@@ -7,14 +7,18 @@
 //! - `commit`  cronologia (log) e creazione di commit
 //! - `rami`    rami: elenco, creazione, checkout, eliminazione, merge
 //! - `diff`    differenze di un file o di un commit (testo unificato)
-//! - `remote`  remoti: elenco, fetch, pull, push
+//! - `remote`  remoti: elenco, fetch, pull, push, gestione remoti
 //! - `stash`   modifiche messe da parte (stash)
 //! - `tag`     etichette (tag) del repository
-//! - `azioni`  reset, cherry-pick, config dell'autore
+//! - `azioni`  reset, cherry-pick, revert, config dell'autore
+//! - `conflitti` risoluzione dei conflitti di merge
+//! - `blame`   blame riga per riga di un file
 //! - `storage` elenco dei repository aperti di recente (file JSON)
 
 pub mod azioni;
+pub mod blame;
 pub mod commit;
+pub mod conflitti;
 pub mod diff;
 pub mod model;
 pub mod rami;

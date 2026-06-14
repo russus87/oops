@@ -73,6 +73,49 @@ pub fn cherry_pick(percorso: &str, id: &str) -> Result<(), String> {
     repo.cleanup_state().map_err(|e| e.to_string())
 }
 
+/// Annulla un commit creandone uno nuovo che ne inverte le modifiche
+/// (git revert). In caso di conflitti restituisce un errore.
+pub fn revert(percorso: &str, id: &str) -> Result<(), String> {
+    let repo = crate::apri(percorso)?;
+    let oid = Oid::from_str(id).map_err(|e| e.to_string())?;
+    let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+
+    repo.revert(&commit, None).map_err(|e| e.to_string())?;
+
+    if repo.index().map_err(|e| e.to_string())?.has_conflicts() {
+        return Err("revert con conflitti: risolvi i file e fai un commit".into());
+    }
+
+    let albero_id = repo
+        .index()
+        .map_err(|e| e.to_string())?
+        .write_tree()
+        .map_err(|e| e.to_string())?;
+    let albero = repo.find_tree(albero_id).map_err(|e| e.to_string())?;
+    let testa = repo
+        .head()
+        .map_err(|e| e.to_string())?
+        .peel_to_commit()
+        .map_err(|e| e.to_string())?;
+    let firma = repo
+        .signature()
+        .or_else(|_| git2::Signature::now("Oops", "oops@local"))
+        .map_err(|e| e.to_string())?;
+    let titolo = commit.summary().unwrap_or("commit");
+
+    repo.commit(
+        Some("HEAD"),
+        &firma,
+        &firma,
+        &format!("Revert \"{titolo}\""),
+        &albero,
+        &[&testa],
+    )
+    .map_err(|e| e.to_string())?;
+
+    repo.cleanup_state().map_err(|e| e.to_string())
+}
+
 /// Legge nome ed email dell'autore dalla configurazione di Git.
 pub fn config_utente(percorso: &str) -> Result<ConfigUtente, String> {
     let repo = crate::apri(percorso)?;

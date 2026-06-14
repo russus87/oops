@@ -1,7 +1,7 @@
 <script>
-  // Mostra un diff in formato testo unificato, colorando le righe.
-  // Se è passato `onHunk`, ogni blocco (@@) mostra dei pulsanti per agire
-  // su quel singolo hunk (stage/unstage/scarta).
+  // Mostra un diff: vista unificata (default) oppure affiancata (side-by-side).
+  // Se è passato `onHunk`, ogni blocco (@@) mostra i pulsanti per agire su quel
+  // singolo hunk (stage/unstage/scarta). Lo split è disattivato con onHunk.
   let {
     testo = "",
     vuoto = "Seleziona un file per vedere le differenze.",
@@ -9,7 +9,8 @@
     onHunk = null,
   } = $props();
 
-  // Assegna a ogni riga una classe in base al primo carattere.
+  let affiancato = $state(false);
+
   function classe(riga) {
     if (riga.startsWith("+++") || riga.startsWith("---")) return "info";
     if (riga.startsWith("+")) return "agg";
@@ -19,8 +20,7 @@
     return "";
   }
 
-  // Divide il testo in: preambolo (intestazione del file) + lista di hunk.
-  // Ogni hunk ha un indice progressivo, lo stesso usato dal backend.
+  // Divide il testo in preambolo + hunk (con indice progressivo, come il backend).
   let blocchi = $derived(dividi(testo));
 
   function dividi(t) {
@@ -40,14 +40,73 @@
     }
     return { preambolo, hunk };
   }
+
+  // Per la vista affiancata: accoppia righe rimosse (sinistra) e aggiunte (destra).
+  let coppie = $derived(affiancato ? affianca(testo) : []);
+
+  function affianca(t) {
+    const righe = t ? t.split("\n") : [];
+    const out = [];
+    let rim = [];
+    const scarica = () => {
+      for (const r of rim) out.push({ s: r, d: null });
+      rim = [];
+    };
+    for (const r of righe) {
+      if (r.startsWith("diff ") || r.startsWith("index ") || r.startsWith("+++") || r.startsWith("---")) {
+        scarica();
+        out.push({ info: r });
+      } else if (r.startsWith("@@")) {
+        scarica();
+        out.push({ testa: r });
+      } else if (r.startsWith("-")) {
+        rim.push(r);
+      } else if (r.startsWith("+")) {
+        // Se c'è una riga rimossa in attesa, le mettiamo sulla stessa riga.
+        if (rim.length > 0) out.push({ s: rim.shift(), d: r });
+        else out.push({ s: null, d: r });
+      } else {
+        scarica();
+        out.push({ s: r, d: r, ctx: true });
+      }
+    }
+    scarica();
+    return out;
+  }
 </script>
 
+<div class="diff-contenitore">
 {#if testo}
-  <div class="diff">
-    <pre>{#each blocchi.preambolo as riga}<span class="riga {classe(riga)}">{riga || " "}</span>
+  <div class="diff-intestazione">
+    <button class="fantasma" onclick={() => (affiancato = !affiancato)}>
+      {affiancato ? "Vista unificata" : "Vista affiancata"}
+    </button>
+  </div>
+  {#if affiancato}
+    <div class="diff diff-split">
+      <table>
+        <tbody>
+          {#each coppie as c}
+            {#if c.info || c.testa}
+              <tr><td class="riga {c.info ? 'info' : 'testa'}" colspan="2">{c.info || c.testa}</td></tr>
+            {:else}
+              <tr>
+                <td class="riga {c.s && !c.ctx ? 'rim' : ''}">{c.s ?? ""}</td>
+                <td class="riga {c.d && !c.ctx ? 'agg' : ''}">{c.d ?? ""}</td>
+              </tr>
+            {/if}
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  {:else}
+    <div class="diff">
+      <pre>{#each blocchi.preambolo as riga}<span class="riga {classe(riga)}">{riga || " "}</span>
 {/each}{#each blocchi.hunk as h}{#if onHunk}<span class="hunk-barra"><button onclick={() => onHunk(h.indice, inStage ? "unstage" : "stage")}>{inStage ? "− Togli hunk" : "+ Stage hunk"}</button>{#if !inStage}<button class="pericolo" onclick={() => onHunk(h.indice, "scarta")}>↩ Scarta hunk</button>{/if}</span>{/if}{#each h.righe as riga}<span class="riga {classe(riga)}">{riga || " "}</span>
 {/each}{/each}</pre>
-  </div>
+    </div>
+  {/if}
 {:else}
   <div class="diff-vuoto">{vuoto}</div>
 {/if}
+</div>

@@ -9,6 +9,8 @@ use git2::{
     Cred, CredentialType, FetchOptions, PushOptions, RemoteCallbacks, Repository,
 };
 
+use crate::model::Remoto;
+
 /// Callback per le credenziali, condiviso da clone/fetch/push.
 pub fn credenziali(
     url: &str,
@@ -37,6 +39,64 @@ pub fn lista(percorso: &str) -> Result<Vec<String>, String> {
     let repo = crate::apri(percorso)?;
     let remoti = repo.remotes().map_err(|e| e.to_string())?;
     Ok(remoti.iter().flatten().map(|s| s.to_string()).collect())
+}
+
+/// Elenca i remoti con nome e URL.
+pub fn lista_dettagli(percorso: &str) -> Result<Vec<Remoto>, String> {
+    let repo = crate::apri(percorso)?;
+    let nomi = repo.remotes().map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for nome in nomi.iter().flatten() {
+        let url = repo
+            .find_remote(nome)
+            .ok()
+            .and_then(|r| r.url().map(|s| s.to_string()))
+            .unwrap_or_default();
+        out.push(Remoto {
+            nome: nome.to_string(),
+            url,
+        });
+    }
+    Ok(out)
+}
+
+/// Aggiunge un nuovo remoto.
+pub fn aggiungi(percorso: &str, nome: &str, url: &str) -> Result<(), String> {
+    let repo = crate::apri(percorso)?;
+    repo.remote(nome, url).map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Cambia l'URL di un remoto esistente.
+pub fn imposta_url(percorso: &str, nome: &str, url: &str) -> Result<(), String> {
+    let repo = crate::apri(percorso)?;
+    repo.remote_set_url(nome, url).map_err(|e| e.to_string())
+}
+
+/// Rimuove un remoto.
+pub fn rimuovi(percorso: &str, nome: &str) -> Result<(), String> {
+    let repo = crate::apri(percorso)?;
+    repo.remote_delete(nome).map_err(|e| e.to_string())
+}
+
+/// Carica tutte le tag sul remoto.
+pub fn push_tags(percorso: &str, remoto: &str) -> Result<(), String> {
+    let repo = crate::apri(percorso)?;
+    let mut r = repo.find_remote(remoto).map_err(|e| e.to_string())?;
+    let mut po = PushOptions::new();
+    po.remote_callbacks(callbacks());
+    r.push(&["refs/tags/*:refs/tags/*"], Some(&mut po))
+        .map_err(|e| e.to_string())
+}
+
+/// Elimina un ramo sul remoto (git push origin --delete <ramo>).
+pub fn elimina_ramo_remoto(percorso: &str, remoto: &str, ramo: &str) -> Result<(), String> {
+    let repo = crate::apri(percorso)?;
+    let mut r = repo.find_remote(remoto).map_err(|e| e.to_string())?;
+    let mut po = PushOptions::new();
+    po.remote_callbacks(callbacks());
+    // Una refspec con il lato sinistro vuoto cancella il ref remoto.
+    r.push(&[format!(":refs/heads/{ramo}")], Some(&mut po))
+        .map_err(|e| e.to_string())
 }
 
 /// Scarica gli aggiornamenti dal remoto senza toccare i file (git fetch).
@@ -104,6 +164,23 @@ pub fn push(percorso: &str, remoto: &str) -> Result<(), String> {
 
     // Collega il ramo locale al suo upstream, così d'ora in poi conosciamo
     // l'avanti/indietro senza dover indovinare.
+    imposta_upstream(&repo, ramo, remoto);
+    Ok(())
+}
+
+/// Come `push` ma forzato (riscrive la storia sul remoto). Usare con cautela.
+pub fn push_forza(percorso: &str, remoto: &str) -> Result<(), String> {
+    let repo = crate::apri(percorso)?;
+    let head = repo.head().map_err(|e| e.to_string())?;
+    let ramo = head.shorthand().ok_or("ramo corrente sconosciuto")?;
+
+    let mut r = repo.find_remote(remoto).map_err(|e| e.to_string())?;
+    let mut po = PushOptions::new();
+    po.remote_callbacks(callbacks());
+
+    // Il "+" davanti alla refspec indica un push forzato.
+    let refspec = format!("+refs/heads/{ramo}:refs/heads/{ramo}");
+    r.push(&[&refspec], Some(&mut po)).map_err(|e| e.to_string())?;
     imposta_upstream(&repo, ramo, remoto);
     Ok(())
 }

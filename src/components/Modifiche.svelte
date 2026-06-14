@@ -1,15 +1,20 @@
 <script>
   // Vista "Modifiche": elenco file in stage e non, riquadro commit, e a destra
   // il diff del file selezionato.
+  import { confirm } from "@tauri-apps/plugin-dialog";
   import * as api from "../lib/api.js";
   import { stato } from "../lib/stato.svelte.js";
   import Diff from "./Diff.svelte";
+  import Conflitti from "./Conflitti.svelte";
+  import Blame from "./Blame.svelte";
 
   let s = $state(null); // StatoRepo dal backend
+  let conflitti = $state([]); // file in conflitto
   let messaggio = $state("");
   let scelto = $state(null); // { file, inStage }
   let diffTesto = $state("");
   let amendOn = $state(false); // se true, il commit corregge l'ultimo
+  let blameFile = $state(null); // file aperto nel pannello Blame
 
   // Simboli per lo stato di un file.
   const simbolo = {
@@ -30,6 +35,7 @@
       // Se il file selezionato non esiste più, mostra il primo disponibile.
       aggiornaSelezione(nuovo);
     });
+    api.conflittiLista(stato.percorso).then((c) => (conflitti = c)).catch(() => (conflitti = []));
   });
 
   // Carica il diff del file selezionato.
@@ -122,6 +128,20 @@
     }
   }
 
+  async function scartaTutto() {
+    if (!(await confirm("Scartare TUTTE le modifiche non salvate? Operazione irreversibile."))) return;
+    await api.scartaTutto(stato.percorso);
+    stato.avvisa("Modifiche scartate");
+    stato.ricarica();
+  }
+
+  async function pulisci() {
+    if (!(await confirm("Eliminare dal disco tutti i file non tracciati?"))) return;
+    await api.pulisciNonTracciati(stato.percorso);
+    stato.avvisa("File non tracciati eliminati");
+    stato.ricarica();
+  }
+
   // Azione su un singolo hunk dal pannello Diff.
   async function suHunk(indice, tipo) {
     try {
@@ -139,13 +159,20 @@
 
 <div class="modifiche">
   <div class="pannello-modifiche">
+    {#if conflitti.length > 0}
+      <Conflitti file={conflitti} />
+    {/if}
     {#if s}
       <!-- File non in stage -->
       <div class="gruppo-file">
         <div class="intestazione">
           <span>Modifiche ({s.non_in_stage.length})</span>
           {#if s.non_in_stage.length > 0}
-            <button class="fantasma" onclick={addTutto}>Aggiungi tutto</button>
+            <span class="int-ops">
+              <button class="fantasma" title="Scarta tutto" onclick={scartaTutto}>↩</button>
+              <button class="fantasma" title="Elimina i non tracciati" onclick={pulisci}>🧹</button>
+              <button class="fantasma" onclick={addTutto}>Aggiungi tutto</button>
+            </span>
           {/if}
         </div>
         <div class="lista">
@@ -158,6 +185,7 @@
               <span class="stato {f.stato}">{simbolo[f.stato]}</span>
               <span class="nome">{f.percorso}</span>
               <span class="ops">
+                <button title="Blame / cronologia" onclick={(e) => { e.stopPropagation(); blameFile = f.percorso; }}>📜</button>
                 <button title="Scarta" class="pericolo" onclick={(e) => scarta(f.percorso, e)}>↩</button>
                 <button title="Aggiungi" onclick={(e) => add(f.percorso, e)}>+</button>
               </span>
@@ -218,3 +246,7 @@
 
   <Diff testo={diffTesto} inStage={scelto?.inStage} onHunk={suHunk} />
 </div>
+
+{#if blameFile}
+  <Blame file={blameFile} chiudi={() => (blameFile = null)} />
+{/if}

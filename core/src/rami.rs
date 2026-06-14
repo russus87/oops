@@ -160,10 +160,92 @@ pub fn merge(percorso: &str, nome: &str) -> Result<String, String> {
     Ok("merge completato".into())
 }
 
+/// Crea un nuovo ramo a partire da un commit specifico.
+pub fn crea_da(percorso: &str, nome: &str, id: &str, cambia: bool) -> Result<(), String> {
+    let repo = crate::apri(percorso)?;
+    let oid = git2::Oid::from_str(id).map_err(|e| e.to_string())?;
+    let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+    repo.branch(nome, &commit, false).map_err(|e| e.to_string())?;
+    if cambia {
+        checkout(percorso, nome)?;
+    }
+    Ok(())
+}
+
+/// Si sposta su un commit specifico (HEAD "staccata").
+pub fn checkout_commit(percorso: &str, id: &str) -> Result<(), String> {
+    let repo = crate::apri(percorso)?;
+    let oid = git2::Oid::from_str(id).map_err(|e| e.to_string())?;
+    let oggetto = repo
+        .find_commit(oid)
+        .map_err(|e| e.to_string())?
+        .into_object();
+    repo.checkout_tree(&oggetto, Some(CheckoutBuilder::new().safe()))
+        .map_err(|e| e.to_string())?;
+    repo.set_head_detached(oid).map_err(|e| e.to_string())
+}
+
+/// Riposiziona (rebase) il ramo corrente sopra un altro ramo. In caso di
+/// conflitti annulla tutto e restituisce un errore (rebase non interattivo).
+pub fn rebase(percorso: &str, su: &str) -> Result<String, String> {
+    let repo = crate::apri(percorso)?;
+
+    let bersaglio = repo
+        .find_branch(su, BranchType::Local)
+        .map_err(|e| e.to_string())?;
+    let su_ac = repo
+        .reference_to_annotated_commit(bersaglio.get())
+        .map_err(|e| e.to_string())?;
+
+    let firma = repo
+        .signature()
+        .or_else(|_| git2::Signature::now("Oops", "oops@local"))
+        .map_err(|e| e.to_string())?;
+
+    // branch = None -> usa HEAD; upstream = ramo bersaglio; onto = None -> bersaglio.
+    let mut rb = repo
+        .rebase(None, Some(&su_ac), None, None)
+        .map_err(|e| e.to_string())?;
+
+    let mut applicati = 0;
+    loop {
+        match rb.next() {
+            None => break,
+            Some(Ok(_op)) => {}
+            Some(Err(e)) => {
+                let _ = rb.abort();
+                return Err(e.to_string());
+            }
+        }
+        // Se l'applicazione del commit ha generato conflitti, abortiamo.
+        if repo
+            .index()
+            .map_err(|e| e.to_string())?
+            .has_conflicts()
+        {
+            let _ = rb.abort();
+            return Err("rebase con conflitti: annullato".into());
+        }
+        rb.commit(None, &firma, None).map_err(|e| e.to_string())?;
+        applicati += 1;
+    }
+
+    rb.finish(Some(&firma)).map_err(|e| e.to_string())?;
+    Ok(format!("rebase completato ({applicati} commit)"))
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
     use std::fs;
+
+    /// Nome del ramo corrente (utile nei test: init può creare master o main).
+    fn ramo_corrente(p: &str) -> String {
+        let repo = git2::Repository::open(p).unwrap();
+        let head = repo.head().unwrap();
+        let nome = head.shorthand().unwrap().to_string();
+        nome
+    }
 
     #[test]
     fn crea_e_elenca() {
@@ -180,5 +262,47 @@ mod test {
         assert!(nomi.contains(&"sviluppo"));
         // Uno solo dev'essere quello corrente.
         assert_eq!(rami.iter().filter(|r| r.corrente).count(), 1);
+    }
+
+    #[test]
+    fn rebase_lineare() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().to_str().unwrap();
+        git2::Repository::init(dir.path()).unwrap();
+
+        // Commit base su main.
+        fs::write(dir.path().join("base.txt"), "base\n").unwrap();
+        crate::stage::aggiungi(p, "base.txt").unwrap();
+        crate::commit::crea(p, "base", "T", "t@t.it").unwrap();
+
+        // Nome del ramo principale (dipende dalla config: master o main).
+        let principale = ramo_corrente(p);
+
+        // Ramo funzione con un suo commit (file diverso = niente conflitti).
+        crea(p, "funzione", true).unwrap();
+        fs::write(dir.path().join("funz.txt"), "funz\n").unwrap();
+        crate::stage::aggiungi(p, "funz.txt").unwrap();
+        crate::commit::crea(p, "lavoro", "T", "t@t.it").unwrap();
+
+        // Avanza il ramo principale con un altro commit.
+        checkout(p, &principale).unwrap();
+        fs::write(dir.path().join("main2.txt"), "m2\n").unwrap();
+        crate::stage::aggiungi(p, "main2.txt").unwrap();
+        crate::commit::crea(p, "main avanti", "T", "t@t.it").unwrap();
+
+        // Rebase di funzione sul principale: "lavoro" viene riapplicato in cima.
+        checkout(p, "funzione").unwrap();
+        rebase(p, &principale).unwrap();
+
+        let storia: Vec<String> = crate::commit::log(p, 10)
+            .unwrap()
+            .into_iter()
+            .map(|v| v.titolo)
+            .collect();
+        // "lavoro" è in cima e ora la storia include "main avanti" (prima assente):
+        // il rebase ha riportato il commit del ramo sopra al principale aggiornato.
+        assert_eq!(storia.len(), 3);
+        assert_eq!(storia[0], "lavoro");
+        assert!(storia.contains(&"main avanti".to_string()));
     }
 }

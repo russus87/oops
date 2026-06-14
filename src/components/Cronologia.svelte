@@ -6,6 +6,9 @@
   import { stato } from "../lib/stato.svelte.js";
   import Diff from "./Diff.svelte";
 
+  let mostraRamo = $state(false);
+  let nomeRamo = $state("");
+
   let commit = $state([]);
   let scelto = $state(null); // id del commit selezionato
   let file = $state([]); // file toccati dal commit
@@ -74,6 +77,40 @@
     }
   }
 
+  async function revert() {
+    if (!(await confirm("Creare un commit che annulla questo?"))) return;
+    try {
+      await api.revert(stato.percorso, scelto);
+      stato.avvisa("Revert creato", "ok");
+      stato.ricarica();
+    } catch (e) {
+      stato.avvisa(String(e), "errore");
+    }
+  }
+
+  async function checkout() {
+    if (!(await confirm("Spostarsi su questo commit (HEAD staccata)?"))) return;
+    try {
+      await api.ramoCheckoutCommit(stato.percorso, scelto);
+      stato.avvisa("Ora su un commit (HEAD staccata)");
+      stato.ricarica();
+    } catch (e) {
+      stato.avvisa(String(e), "errore");
+    }
+  }
+
+  async function creaRamoDaQui() {
+    if (!nomeRamo.trim()) return;
+    try {
+      await api.ramoCreaDa(stato.percorso, nomeRamo.trim(), scelto, true);
+      mostraRamo = false;
+      nomeRamo = "";
+      stato.ricarica();
+    } catch (e) {
+      stato.avvisa("Creazione ramo fallita: " + e, "errore");
+    }
+  }
+
   let datiScelto = $derived(commit.find((c) => c.id === scelto));
 </script>
 
@@ -84,7 +121,9 @@
     {/if}
     {#each commit as c}
       <div class="voce-commit" class:scelto={scelto === c.id} onclick={() => (scelto = c.id)}>
-        <div class="titolo">{c.titolo}</div>
+        <div class="titolo">
+          {#each c.riferimenti as r}<span class="deco">{r}</span>{/each}{c.titolo}
+        </div>
         <div class="meta">
           <span class="hash">{c.id_breve}</span>
           {#if c.genitori.length > 1}<span class="merge">merge</span>{/if}
@@ -100,11 +139,14 @@
       <div class="azioni-commit">
         <span class="hash">{datiScelto.id_breve}</span>
         <span class="spazio"></span>
+        <button onclick={() => (mostraRamo = true)} title="Crea un ramo da qui">⎇ Ramo</button>
+        <button onclick={checkout} title="Spostati su questo commit">Checkout</button>
+        <button onclick={cherry} title="Applica questo commit sul ramo corrente">🍒</button>
+        <button onclick={revert} title="Annulla con un nuovo commit">↶ Revert</button>
         <span class="reset-label">Reset:</span>
         <button onclick={() => reset("soft")}>soft</button>
         <button onclick={() => reset("mixed")}>mixed</button>
         <button class="pericolo" onclick={() => reset("hard")}>hard</button>
-        <button onclick={cherry} title="Applica questo commit sul ramo corrente">🍒 Cherry-pick</button>
       </div>
 
       <div class="file-commit">
@@ -133,3 +175,19 @@
     {/if}
   </div>
 </div>
+
+{#if mostraRamo}
+  <div class="overlay" onclick={() => (mostraRamo = false)}>
+    <div class="modale" onclick={(e) => e.stopPropagation()}>
+      <h2>Nuovo ramo da questo commit</h2>
+      <div class="campo">
+        <label for="nrq">Nome del ramo</label>
+        <input id="nrq" bind:value={nomeRamo} placeholder="es. correzione/bug" />
+      </div>
+      <div class="pulsanti">
+        <button onclick={() => (mostraRamo = false)}>Annulla</button>
+        <button class="primario" onclick={creaRamoDaQui}>Crea e passa</button>
+      </div>
+    </div>
+  </div>
+{/if}

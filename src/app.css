@@ -369,6 +369,14 @@ textarea {
   overflow-y: auto;
   max-height: 38vh;
 }
+.int-ops {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+.int-ops button {
+  padding: 1px 7px;
+}
 .riga-file {
   display: flex;
   align-items: center;
@@ -521,10 +529,52 @@ textarea {
 }
 
 /* ---- Vista Diff ---- */
+.diff-contenitore {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+.diff-intestazione {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 8px;
+  background: var(--sfondo2);
+  border-bottom: 1px solid var(--bordo);
+}
+.diff-intestazione button {
+  padding: 2px 10px;
+  font-size: 11px;
+}
 .diff {
   overflow: auto;
-  height: 100%;
+  flex: 1;
   background: var(--sfondo);
+}
+.diff-split table {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  font-size: 12.5px;
+}
+.diff-split td {
+  width: 50%;
+  padding: 0 10px;
+  vertical-align: top;
+  white-space: pre-wrap;
+  word-break: break-all;
+  border-left: 1px solid var(--bordo);
+}
+.diff-split td.agg {
+  background: rgba(81, 207, 102, 0.13);
+}
+.diff-split td.rim {
+  background: rgba(255, 107, 107, 0.13);
+}
+.diff-split td.testa,
+.diff-split td.info {
+  color: var(--blu);
+  background: var(--sfondo2);
 }
 .diff pre {
   margin: 0;
@@ -614,6 +664,183 @@ textarea {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 18px;
+}
+
+.modale.grande {
+  width: 760px;
+  max-width: 94vw;
+  height: 80vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+.modale-testa {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--bordo);
+}
+.modale-testa h2 {
+  margin: 0;
+  font-size: 16px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.modale-corpo {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 18px;
+}
+.tabs-mini {
+  display: flex;
+  gap: 4px;
+}
+.tabs-mini button {
+  padding: 4px 12px;
+}
+.tabs-mini button.attivo {
+  background: var(--accento);
+  border-color: var(--accento);
+  color: #1a0d0d;
+}
+
+/* Conflitti */
+.conflitti {
+  border-bottom: 2px solid var(--avviso);
+  background: rgba(255, 212, 59, 0.08);
+}
+.conflitti-testa {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-weight: 600;
+  color: var(--avviso);
+}
+.conflitto-riga {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+}
+.conflitto-riga .nome {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conflitto-ops {
+  display: flex;
+  gap: 4px;
+}
+.conflitto-ops button {
+  padding: 2px 9px;
+  font-size: 11px;
+}
+
+/* Blame */
+.blame {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  font-size: 12px;
+}
+.blame td {
+  padding: 1px 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  border-bottom: 1px solid var(--sfondo3);
+}
+.blame .b-hash {
+  color: var(--accento2);
+}
+.blame .b-aut {
+  color: var(--testo2);
+  white-space: nowrap;
+}
+.blame .b-num {
+  color: var(--testo2);
+  text-align: right;
+}
+.blame .b-testo {
+  width: 100%;
+}
+
+/* Impostazioni */
+.impostazioni section {
+  margin-bottom: 22px;
+}
+.impostazioni h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--accento2);
+  border-bottom: 1px solid var(--bordo);
+  padding-bottom: 6px;
+}
+.remoto-riga {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.remoto-riga .r-nome {
+  width: 80px;
+  font-weight: 600;
+}
+.remoto-riga input {
+  flex: 1;
+}
+.remoto-riga button {
+  white-space: nowrap;
+}
+.cl-versione ul {
+  margin: 4px 0 12px;
+  padding-left: 20px;
+  color: var(--testo2);
+}
+
+/* Menu a tendina (es. opzioni di Push) */
+.menu-wrap {
+  position: relative;
+}
+.menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  background: var(--sfondo2);
+  border: 1px solid var(--bordo);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+  z-index: 25;
+  min-width: 180px;
+  overflow: hidden;
+}
+.menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-radius: 0;
+  background: none;
+}
+.menu button:hover {
+  background: var(--sfondo3);
+}
+
+/* Decorazioni (ref) nel log */
+.deco {
+  display: inline-block;
+  font-size: 10px;
+  padding: 0 6px;
+  border-radius: 8px;
+  margin-right: 4px;
+  background: var(--sfondo3);
+  border: 1px solid var(--bordo);
+  color: var(--accento2);
 }
 
 /* ---------- Toast ---------- */

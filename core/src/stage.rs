@@ -78,6 +78,38 @@ pub fn scarta(percorso: &str, file: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Scarta TUTTE le modifiche dei file tracciati (git checkout -- .).
+/// Distruttivo: i file non tracciati restano (vedi `pulisci_non_tracciati`).
+pub fn scarta_tutto(percorso: &str) -> Result<(), String> {
+    let repo = crate::apri(percorso)?;
+    let mut co = CheckoutBuilder::new();
+    co.force().remove_untracked(false);
+    repo.checkout_index(None, Some(&mut co))
+        .map_err(|e| e.to_string())
+}
+
+/// Cancella dal disco i file non ancora tracciati (git clean -f). Distruttivo.
+pub fn pulisci_non_tracciati(percorso: &str) -> Result<(), String> {
+    let repo = crate::apri(percorso)?;
+    let mut opts = git2::StatusOptions::new();
+    opts.include_untracked(true).recurse_untracked_dirs(true);
+    let statuses = repo.statuses(Some(&mut opts)).map_err(|e| e.to_string())?;
+
+    let radice = repo
+        .workdir()
+        .ok_or("repository senza cartella di lavoro")?
+        .to_path_buf();
+
+    for voce in statuses.iter() {
+        if voce.status().contains(git2::Status::WT_NEW) {
+            if let Some(p) = voce.path() {
+                let _ = std::fs::remove_file(radice.join(p));
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

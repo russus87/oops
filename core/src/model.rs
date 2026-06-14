@@ -74,6 +74,8 @@ pub struct VoceLog {
     pub data: String,
     /// Hash abbreviati dei genitori (più di uno = commit di merge).
     pub genitori: Vec<String>,
+    /// Nomi di rami/tag che puntano a questo commit (decorazioni del grafo).
+    pub riferimenti: Vec<String>,
 }
 
 /// Un ramo (locale o remoto).
@@ -112,4 +114,24 @@ pub struct Tag {
 pub struct ConfigUtente {
     pub nome: String,
     pub email: String,
+}
+
+/// Un remoto configurato (nome + URL).
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Remoto {
+    pub nome: String,
+    pub url: String,
+}
+
+/// Una riga del blame: chi e quando ha toccato l'ultima volta quella riga.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct VoceBlame {
+    /// Numero di riga (da 1).
+    pub numero: usize,
+    /// Hash abbreviato del commit responsabile.
+    pub id_breve: String,
+    /// Autore del commit.
+    pub autore: String,
+    /// Contenuto della riga.
+    pub testo: String,
 }

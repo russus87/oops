@@ -1,5 +1,7 @@
 //! Cronologia (log) e creazione di commit.
 
+use std::collections::HashMap;
+
 use git2::{Repository, Signature, Sort};
 
 use crate::model::VoceLog;
@@ -14,6 +16,8 @@ pub fn log(percorso: &str, limite: usize) -> Result<Vec<VoceLog>, String> {
         return Ok(Vec::new());
     }
 
+    let decorazioni = mappa_riferimenti(&repo);
+
     let mut walk = repo.revwalk().map_err(|e| e.to_string())?;
     walk.push_head().map_err(|e| e.to_string())?;
     walk.set_sorting(Sort::TIME).map_err(|e| e.to_string())?;
@@ -22,18 +26,81 @@ pub fn log(percorso: &str, limite: usize) -> Result<Vec<VoceLog>, String> {
     for oid in walk.take(limite) {
         let oid = oid.map_err(|e| e.to_string())?;
         let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
-        voci.push(in_voce(&commit));
+        voci.push(in_voce(&commit, &decorazioni));
     }
     Ok(voci)
 }
 
+/// Cronologia dei soli commit che hanno toccato un certo file.
+pub fn log_file(percorso: &str, file: &str, limite: usize) -> Result<Vec<VoceLog>, String> {
+    let repo = crate::apri(percorso)?;
+    if repo.head().is_err() {
+        return Ok(Vec::new());
+    }
+    let decorazioni = mappa_riferimenti(&repo);
+
+    let mut walk = repo.revwalk().map_err(|e| e.to_string())?;
+    walk.push_head().map_err(|e| e.to_string())?;
+    walk.set_sorting(Sort::TIME).map_err(|e| e.to_string())?;
+
+    let percorso_file = std::path::Path::new(file);
+    let mut voci = Vec::new();
+    for oid in walk {
+        if voci.len() >= limite {
+            break;
+        }
+        let oid = oid.map_err(|e| e.to_string())?;
+        let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+        if tocca_file(&repo, &commit, percorso_file) {
+            voci.push(in_voce(&commit, &decorazioni));
+        }
+    }
+    Ok(voci)
+}
+
+/// Vero se il commit ha modificato `file` rispetto al primo genitore.
+fn tocca_file(repo: &Repository, commit: &git2::Commit, file: &std::path::Path) -> bool {
+    let albero = match commit.tree() {
+        Ok(t) => t,
+        Err(_) => return false,
+    };
+    let albero_padre = commit.parent(0).ok().and_then(|p| p.tree().ok());
+    let mut opts = git2::DiffOptions::new();
+    opts.pathspec(file);
+    match repo.diff_tree_to_tree(albero_padre.as_ref(), Some(&albero), Some(&mut opts)) {
+        Ok(d) => d.deltas().len() > 0,
+        Err(_) => false,
+    }
+}
+
+/// Costruisce una mappa "id commit -> nomi dei rami/tag che lo puntano".
+fn mappa_riferimenti(repo: &Repository) -> HashMap<String, Vec<String>> {
+    let mut mappa: HashMap<String, Vec<String>> = HashMap::new();
+    if let Ok(riferimenti) = repo.references() {
+        for r in riferimenti.flatten() {
+            // Risolviamo fino al commit (le tag annotate puntano a un oggetto tag).
+            if let Ok(commit) = r.peel_to_commit() {
+                let nome = r
+                    .shorthand()
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                if nome.is_empty() || nome == "HEAD" {
+                    continue;
+                }
+                mappa.entry(commit.id().to_string()).or_default().push(nome);
+            }
+        }
+    }
+    mappa
+}
+
 /// Trasforma un commit di git2 nella nostra VoceLog (con data leggibile).
-fn in_voce(commit: &git2::Commit) -> VoceLog {
+fn in_voce(commit: &git2::Commit, decorazioni: &HashMap<String, Vec<String>>) -> VoceLog {
     let autore = commit.author();
     let id = commit.id().to_string();
+    let riferimenti = decorazioni.get(&id).cloned().unwrap_or_default();
     VoceLog {
         id_breve: id.chars().take(7).collect(),
-        id,
         titolo: commit.summary().unwrap_or("(senza messaggio)").to_string(),
         autore: autore.name().unwrap_or("?").to_string(),
         email: autore.email().unwrap_or("").to_string(),
@@ -42,6 +109,8 @@ fn in_voce(commit: &git2::Commit) -> VoceLog {
             .parent_ids()
             .map(|p| p.to_string().chars().take(7).collect())
             .collect(),
+        riferimenti,
+        id,
     }
 }
 

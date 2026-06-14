@@ -4,6 +4,37 @@ Interfaccia grafica moderna per Git. Rust + Tauri 2 + Svelte 5.
 Stessa impalcatura di Oxiterm (workspace Cargo `core` + `src-tauri`, CI verso repo
 privato `oops` + repo pubblico `oops-dist` con artefatti firmati).
 
+## v0.3.0 (2026-06-14) — Fase 3 (release corposa: tutto il resto)
+
+Build verificata: `cargo test -p oops-core` (10 test verdi, +rebase e +conflitti),
+`cargo build -p oops` OK, `npm run build` OK.
+
+### core/ (nuovi moduli + estensioni)
+- `conflitti.rs` — `lista`, `risolvi` (nostra/loro dal blob nell'indice),
+  `segna_risolto`, `annulla` (reset hard + cleanup_state). + test conflitto→risoluzione.
+- `blame.rs` — `blame` riga per riga (blame_file + contenuto della cartella).
+- `rami.rs` — `rebase` (non interattivo, abort sui conflitti), `crea_da` (ramo da un
+  commit), `checkout_commit` (HEAD staccata). + test rebase lineare.
+- `azioni.rs` — `revert` (commit inverso, errore sui conflitti).
+- `remote.rs` — `lista_dettagli`, `aggiungi`/`imposta_url`/`rimuovi`, `push_forza`,
+  `push_tags`, `elimina_ramo_remoto`.
+- `stage.rs` — `scarta_tutto`, `pulisci_non_tracciati`.
+- `commit.rs` — `log_file` (cronologia di un singolo file), decorazioni dei ref
+  (rami/tag) aggiunte a ogni `VoceLog` via `mappa_riferimenti`.
+
+### src-tauri/ — +24 comandi ponte.
+
+### src/ (frontend)
+- `Diff.svelte` — toggle vista **affiancata** (side-by-side) oltre all'unificata.
+- `Conflitti.svelte` — pannello risoluzione (nostra/loro/risolto + annulla).
+- `Blame.svelte` — modale con Blame e Cronologia del file.
+- `Impostazioni.svelte` — modale: tema chiaro/scuro, autore, gestione remoti, info/changelog.
+- `Modifiche.svelte` — pannello conflitti, scarta-tutto/pulisci, pulsante Blame per file.
+- `Cronologia.svelte` — decorazioni ref sui commit, Revert/Checkout/“Ramo da qui”.
+- `BarraLaterale.svelte` — rebase per ramo locale, elimina ramo remoto.
+- `App.svelte` — menu Push (force/tag), apertura Impostazioni; tema applicato all'avvio.
+- `stato.svelte.js` — tema persistito in localStorage.
+
 ## v0.2.0 (2026-06-14) — Fase 2
 
 Aggiunte funzioni "da Git GUI serio". Build verificata: `cargo test -p oops-core`

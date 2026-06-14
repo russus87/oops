@@ -68,6 +68,35 @@
     }
   }
 
+  async function rebase(nome, ev) {
+    ev.stopPropagation();
+    if (!(await confirm("Riposizionare (rebase) il ramo corrente su «" + nome + "»?"))) return;
+    try {
+      const esito = await api.ramoRebase(stato.percorso, nome);
+      stato.avvisa("Rebase: " + esito, "ok");
+      stato.ricarica();
+    } catch (e) {
+      stato.avvisa(String(e), "errore");
+    }
+  }
+
+  async function eliminaRemoto(nomeCompleto, ev) {
+    ev.stopPropagation();
+    // "origin/feature" -> remoto "origin", ramo "feature".
+    const i = nomeCompleto.indexOf("/");
+    if (i < 0) return;
+    const remoto = nomeCompleto.slice(0, i);
+    const ramo = nomeCompleto.slice(i + 1);
+    if (!(await confirm("Eliminare «" + ramo + "» sul remoto «" + remoto + "»?"))) return;
+    try {
+      await api.eliminaRamoRemoto(stato.percorso, remoto, ramo);
+      stato.avvisa("Ramo remoto eliminato");
+      stato.ricarica();
+    } catch (e) {
+      stato.avvisa(String(e), "errore");
+    }
+  }
+
   async function creaTag() {
     if (!nomeTag.trim()) return;
     try {
@@ -127,6 +156,7 @@
         {#if !r.corrente}
           <span class="ops">
             <button title="Unisci nel ramo corrente" onclick={(e) => merge(r.nome, e)}>⇄</button>
+            <button title="Rebase del ramo corrente su questo" onclick={(e) => rebase(r.nome, e)}>⤴</button>
             <button class="pericolo" title="Elimina" onclick={(e) => elimina(r.nome, e)}>✕</button>
           </span>
         {/if}
@@ -141,6 +171,9 @@
         <div class="ramo" onclick={() => cambia(r.nome)}>
           <span class="icona">☁</span>
           <span class="nome">{r.nome}</span>
+          <span class="ops">
+            <button class="pericolo" title="Elimina sul remoto" onclick={(e) => eliminaRemoto(r.nome, e)}>✕</button>
+          </span>
         </div>
       {/each}
     {/if}

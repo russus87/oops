@@ -8,9 +8,12 @@
 use std::path::PathBuf;
 
 use oops_core::model::{
-    ConfigUtente, FileModificato, Ramo, RepoRecente, StatoRepo, Tag, VoceLog, VoceStash,
+    ConfigUtente, FileModificato, Ramo, Remoto, RepoRecente, StatoRepo, Tag, VoceBlame, VoceLog,
+    VoceStash,
 };
-use oops_core::{azioni, commit, diff, rami, remote, repo, stage, stash, storage, tag};
+use oops_core::{
+    azioni, blame, commit, conflitti, diff, rami, remote, repo, stage, stash, storage, tag,
+};
 use tauri::{Manager, State};
 
 /// Percorso del file JSON con i repository recenti (in app_config_dir).
@@ -45,6 +48,16 @@ fn log(percorso: String, limite: usize) -> Result<Vec<VoceLog>, String> {
     commit::log(&percorso, limite)
 }
 
+#[tauri::command]
+fn log_file(percorso: String, file: String, limite: usize) -> Result<Vec<VoceLog>, String> {
+    commit::log_file(&percorso, &file, limite)
+}
+
+#[tauri::command]
+fn blame_file(percorso: String, file: String) -> Result<Vec<VoceBlame>, String> {
+    blame::blame(&percorso, &file)
+}
+
 // ---- Staging ----
 
 #[tauri::command]
@@ -70,6 +83,16 @@ fn stage_togli_tutto(percorso: String) -> Result<(), String> {
 #[tauri::command]
 fn scarta(percorso: String, file: String) -> Result<(), String> {
     stage::scarta(&percorso, &file)
+}
+
+#[tauri::command]
+fn scarta_tutto(percorso: String) -> Result<(), String> {
+    stage::scarta_tutto(&percorso)
+}
+
+#[tauri::command]
+fn pulisci_non_tracciati(percorso: String) -> Result<(), String> {
+    stage::pulisci_non_tracciati(&percorso)
 }
 
 // ---- Commit ----
@@ -232,6 +255,50 @@ fn ramo_merge(percorso: String, nome: String) -> Result<String, String> {
     rami::merge(&percorso, &nome)
 }
 
+#[tauri::command]
+fn ramo_rebase(percorso: String, su: String) -> Result<String, String> {
+    rami::rebase(&percorso, &su)
+}
+
+#[tauri::command]
+fn ramo_crea_da(percorso: String, nome: String, id: String, cambia: bool) -> Result<(), String> {
+    rami::crea_da(&percorso, &nome, &id, cambia)
+}
+
+#[tauri::command]
+fn ramo_checkout_commit(percorso: String, id: String) -> Result<(), String> {
+    rami::checkout_commit(&percorso, &id)
+}
+
+// ---- Revert ----
+
+#[tauri::command]
+fn revert(percorso: String, id: String) -> Result<(), String> {
+    azioni::revert(&percorso, &id)
+}
+
+// ---- Conflitti ----
+
+#[tauri::command]
+fn conflitti_lista(percorso: String) -> Result<Vec<String>, String> {
+    conflitti::lista(&percorso)
+}
+
+#[tauri::command]
+fn conflitto_risolvi(percorso: String, file: String, lato: String) -> Result<(), String> {
+    conflitti::risolvi(&percorso, &file, &lato)
+}
+
+#[tauri::command]
+fn conflitto_segna_risolto(percorso: String, file: String) -> Result<(), String> {
+    conflitti::segna_risolto(&percorso, &file)
+}
+
+#[tauri::command]
+fn operazione_annulla(percorso: String) -> Result<(), String> {
+    conflitti::annulla(&percorso)
+}
+
 // ---- Remoti ----
 
 #[tauri::command]
@@ -252,6 +319,41 @@ fn pull(percorso: String, remoto: String) -> Result<String, String> {
 #[tauri::command]
 fn push(percorso: String, remoto: String) -> Result<(), String> {
     remote::push(&percorso, &remoto)
+}
+
+#[tauri::command]
+fn push_forza(percorso: String, remoto: String) -> Result<(), String> {
+    remote::push_forza(&percorso, &remoto)
+}
+
+#[tauri::command]
+fn push_tags(percorso: String, remoto: String) -> Result<(), String> {
+    remote::push_tags(&percorso, &remoto)
+}
+
+#[tauri::command]
+fn remoti_dettagli(percorso: String) -> Result<Vec<Remoto>, String> {
+    remote::lista_dettagli(&percorso)
+}
+
+#[tauri::command]
+fn remoto_aggiungi(percorso: String, nome: String, url: String) -> Result<(), String> {
+    remote::aggiungi(&percorso, &nome, &url)
+}
+
+#[tauri::command]
+fn remoto_imposta_url(percorso: String, nome: String, url: String) -> Result<(), String> {
+    remote::imposta_url(&percorso, &nome, &url)
+}
+
+#[tauri::command]
+fn remoto_rimuovi(percorso: String, nome: String) -> Result<(), String> {
+    remote::rimuovi(&percorso, &nome)
+}
+
+#[tauri::command]
+fn elimina_ramo_remoto(percorso: String, remoto: String, ramo: String) -> Result<(), String> {
+    remote::elimina_ramo_remoto(&percorso, &remoto, &ramo)
 }
 
 // ---- Repository recenti ----
@@ -298,11 +400,15 @@ pub fn run() {
             clona,
             stato,
             log,
+            log_file,
+            blame_file,
             stage_aggiungi,
             stage_aggiungi_tutto,
             stage_togli,
             stage_togli_tutto,
             scarta,
+            scarta_tutto,
+            pulisci_non_tracciati,
             crea_commit,
             amend,
             ultimo_messaggio,
@@ -329,10 +435,25 @@ pub fn run() {
             ramo_checkout,
             ramo_elimina,
             ramo_merge,
+            ramo_rebase,
+            ramo_crea_da,
+            ramo_checkout_commit,
+            revert,
+            conflitti_lista,
+            conflitto_risolvi,
+            conflitto_segna_risolto,
+            operazione_annulla,
             remoti_lista,
+            remoti_dettagli,
+            remoto_aggiungi,
+            remoto_imposta_url,
+            remoto_rimuovi,
+            elimina_ramo_remoto,
             fetch,
             pull,
             push,
+            push_forza,
+            push_tags,
             recenti_lista,
             recenti_aggiungi,
             recenti_rimuovi,

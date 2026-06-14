@@ -16,6 +16,21 @@ class Stato {
   tipoNota = $state(""); // "", "ok", "errore"
   #timer = null;
 
+  // Tema dell'interfaccia ("scuro" o "chiaro"), ricordato tra le sessioni.
+  tema = $state(localStorage.getItem("oops-tema") || "scuro");
+
+  // Applica il tema corrente al documento.
+  applicaTema() {
+    document.documentElement.dataset.tema = this.tema;
+  }
+
+  // Passa da scuro a chiaro e viceversa.
+  cambiaTema() {
+    this.tema = this.tema === "scuro" ? "chiaro" : "scuro";
+    localStorage.setItem("oops-tema", this.tema);
+    this.applicaTema();
+  }
+
   // Apre un repository e ne forza il caricamento.
   apri(percorso) {
     this.percorso = percorso;

@@ -10,6 +10,9 @@ export const clona = (url, destinazione) => invoke("clona", { url, destinazione 
 // ---- Stato e cronologia ----
 export const stato = (percorso) => invoke("stato", { percorso });
 export const log = (percorso, limite = 100) => invoke("log", { percorso, limite });
+export const logFile = (percorso, file, limite = 100) =>
+  invoke("log_file", { percorso, file, limite });
+export const blame = (percorso, file) => invoke("blame_file", { percorso, file });
 
 // ---- Staging ----
 export const stageAggiungi = (percorso, file) =>
@@ -19,6 +22,9 @@ export const stageAggiungiTutto = (percorso) =>
 export const stageTogli = (percorso, file) => invoke("stage_togli", { percorso, file });
 export const stageTogliTutto = (percorso) => invoke("stage_togli_tutto", { percorso });
 export const scarta = (percorso, file) => invoke("scarta", { percorso, file });
+export const scartaTutto = (percorso) => invoke("scarta_tutto", { percorso });
+export const pulisciNonTracciati = (percorso) =>
+  invoke("pulisci_non_tracciati", { percorso });
 
 // ---- Commit ----
 export const creaCommit = (percorso, messaggio, nome = "", email = "") =>
@@ -73,13 +79,41 @@ export const ramoCheckout = (percorso, nome) =>
   invoke("ramo_checkout", { percorso, nome });
 export const ramoElimina = (percorso, nome) => invoke("ramo_elimina", { percorso, nome });
 export const ramoMerge = (percorso, nome) => invoke("ramo_merge", { percorso, nome });
+export const ramoRebase = (percorso, su) => invoke("ramo_rebase", { percorso, su });
+export const ramoCreaDa = (percorso, nome, id, cambia = true) =>
+  invoke("ramo_crea_da", { percorso, nome, id, cambia });
+export const ramoCheckoutCommit = (percorso, id) =>
+  invoke("ramo_checkout_commit", { percorso, id });
+
+// ---- Revert ----
+export const revert = (percorso, id) => invoke("revert", { percorso, id });
+
+// ---- Conflitti ----
+export const conflittiLista = (percorso) => invoke("conflitti_lista", { percorso });
+export const conflittoRisolvi = (percorso, file, lato) =>
+  invoke("conflitto_risolvi", { percorso, file, lato });
+export const conflittoSegnaRisolto = (percorso, file) =>
+  invoke("conflitto_segna_risolto", { percorso, file });
+export const operazioneAnnulla = (percorso) => invoke("operazione_annulla", { percorso });
 
 // ---- Remoti ----
 export const remotiLista = (percorso) => invoke("remoti_lista", { percorso });
+export const remotiDettagli = (percorso) => invoke("remoti_dettagli", { percorso });
+export const remotoAggiungi = (percorso, nome, url) =>
+  invoke("remoto_aggiungi", { percorso, nome, url });
+export const remotoImpostaUrl = (percorso, nome, url) =>
+  invoke("remoto_imposta_url", { percorso, nome, url });
+export const remotoRimuovi = (percorso, nome) => invoke("remoto_rimuovi", { percorso, nome });
+export const eliminaRamoRemoto = (percorso, remoto, ramo) =>
+  invoke("elimina_ramo_remoto", { percorso, remoto, ramo });
 export const fetch = (percorso, remoto = "origin") =>
   invoke("fetch", { percorso, remoto });
 export const pull = (percorso, remoto = "origin") => invoke("pull", { percorso, remoto });
 export const push = (percorso, remoto = "origin") => invoke("push", { percorso, remoto });
+export const pushForza = (percorso, remoto = "origin") =>
+  invoke("push_forza", { percorso, remoto });
+export const pushTags = (percorso, remoto = "origin") =>
+  invoke("push_tags", { percorso, remoto });
 
 // ---- Repository recenti ----
 export const recentiLista = () => invoke("recenti_lista");
