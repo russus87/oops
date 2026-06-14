@@ -196,6 +196,46 @@ pub fn amend(percorso: &str, messaggio: &str) -> Result<String, String> {
     Ok(oid.to_string())
 }
 
+/// Condensa (squash) in un unico commit tutti i commit da `id_piu_vecchio`
+/// fino a HEAD compresi, con un nuovo messaggio. Equivale a un soft reset al
+/// genitore di quel commit seguito da un commit con l'intero contenuto.
+/// Richiede che il commit più vecchio abbia un genitore (non il primo della storia).
+pub fn condensa(percorso: &str, id_piu_vecchio: &str, messaggio: &str) -> Result<String, String> {
+    if messaggio.trim().is_empty() {
+        return Err("serve un messaggio per il commit condensato".into());
+    }
+    let repo = crate::apri(percorso)?;
+
+    // Albero finale = quello dell'attuale HEAD (il risultato che vogliamo tenere).
+    let testa = repo
+        .head()
+        .map_err(|e| e.to_string())?
+        .peel_to_commit()
+        .map_err(|e| e.to_string())?;
+    let albero = testa.tree().map_err(|e| e.to_string())?;
+
+    // Genitore del commit più vecchio: diventerà il genitore del commit condensato.
+    let oid = git2::Oid::from_str(id_piu_vecchio).map_err(|e| e.to_string())?;
+    let piu_vecchio = repo.find_commit(oid).map_err(|e| e.to_string())?;
+    let padre_oid = piu_vecchio
+        .parent_id(0)
+        .map_err(|_| "non si può condensare includendo il primo commit".to_string())?;
+    let padre = repo.find_commit(padre_oid).map_err(|e| e.to_string())?;
+
+    // Sposta HEAD al genitore (soft: lascia stage e file come sono).
+    repo.reset(padre.as_object(), git2::ResetType::Soft, None)
+        .map_err(|e| e.to_string())?;
+
+    let firma = repo
+        .signature()
+        .or_else(|_| Signature::now("Oops", "oops@local"))
+        .map_err(|e| e.to_string())?;
+    let nuovo = repo
+        .commit(Some("HEAD"), &firma, &firma, messaggio, &albero, &[&padre])
+        .map_err(|e| e.to_string())?;
+    Ok(nuovo.to_string())
+}
+
 /// Messaggio dell'ultimo commit (per precompilare l'amend). Vuoto se non c'è.
 pub fn ultimo_messaggio(percorso: &str) -> Result<String, String> {
     let repo = crate::apri(percorso)?;

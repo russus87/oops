@@ -49,6 +49,27 @@ class Stato {
     this.tic++;
   }
 
+  // --- Richiesta credenziali (modale gestita da App) ---
+  credAperta = $state(false);
+  #credResolve = null;
+
+  // Apre la modale credenziali e restituisce una Promise con le credenziali
+  // inserite (o null se l'utente annulla).
+  chiediCredenziali() {
+    this.credAperta = true;
+    return new Promise((res) => (this.#credResolve = res));
+  }
+  inviaCredenziali(cred) {
+    this.credAperta = false;
+    this.#credResolve?.(cred);
+    this.#credResolve = null;
+  }
+  annullaCredenziali() {
+    this.credAperta = false;
+    this.#credResolve?.(null);
+    this.#credResolve = null;
+  }
+
   // Mostra un messaggio temporaneo. tipo = "" | "ok" | "errore".
   avvisa(testo, tipo = "") {
     this.nota = testo;

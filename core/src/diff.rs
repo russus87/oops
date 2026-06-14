@@ -155,7 +155,7 @@ fn da_delta(d: Delta) -> StatoFile {
 }
 
 /// Trasforma un Diff di git2 in testo unificato (con +/-/@@ come git).
-fn in_testo(diff: &Diff) -> Result<String, String> {
+pub(crate) fn in_testo(diff: &Diff) -> Result<String, String> {
     let mut out = String::new();
     diff.print(DiffFormat::Patch, |_delta, _hunk, line| {
         // I caratteri di contesto/aggiunta/rimozione vanno premessi alla riga.

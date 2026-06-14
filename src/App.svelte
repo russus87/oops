@@ -8,11 +8,13 @@
   import Modifiche from "./components/Modifiche.svelte";
   import Cronologia from "./components/Cronologia.svelte";
   import Impostazioni from "./components/Impostazioni.svelte";
+  import Credenziali from "./components/Credenziali.svelte";
 
   let vista = $state("modifiche"); // "modifiche" | "cronologia"
   let info = $state(null); // StatoRepo, serve alla toolbar per avanti/indietro
   let mostraImpostazioni = $state(false);
   let menuPush = $state(false);
+  let menuPull = $state(false);
 
   $effect(() => {
     stato.tic;
@@ -23,24 +25,47 @@
     api.stato(stato.percorso).then((s) => (info = s)).catch(() => (info = null));
   });
 
+  // Riconosce gli errori di autenticazione, per chiedere le credenziali.
+  const eAuth = (e) => /authenticat|401|403|credential|auth/i.test(String(e));
+
+  // Esegue un'operazione di rete; se fallisce per autenticazione chiede le
+  // credenziali all'utente e riprova una volta. `fn` riceve le credenziali.
   async function azioneRete(fn, nome) {
     stato.occupato = true;
     try {
-      const esito = await fn(stato.percorso);
+      const esito = await fn(null);
       stato.avvisa(nome + ": " + (esito || "fatto"), "ok");
       stato.ricarica();
     } catch (e) {
-      stato.avvisa(nome + " fallito: " + e, "errore");
+      if (eAuth(e)) {
+        const cred = await stato.chiediCredenziali();
+        if (!cred) {
+          stato.avvisa(nome + " annullato", "errore");
+        } else {
+          try {
+            const esito = await fn(cred);
+            stato.avvisa(nome + ": " + (esito || "fatto"), "ok");
+            stato.ricarica();
+          } catch (e2) {
+            stato.avvisa(nome + " fallito: " + e2, "errore");
+          }
+        }
+      } else {
+        stato.avvisa(nome + " fallito: " + e, "errore");
+      }
     } finally {
       stato.occupato = false;
     }
   }
 
-  const fetch = () => azioneRete((p) => api.fetch(p), "Fetch");
-  const pull = () => azioneRete((p) => api.pull(p), "Pull");
-  const push = () => azioneRete((p) => api.push(p), "Push");
-  const pushForza = () => { menuPush = false; azioneRete((p) => api.pushForza(p), "Push forzato"); };
-  const pushTags = () => { menuPush = false; azioneRete((p) => api.pushTags(p), "Push tag"); };
+  const fetch = () => azioneRete((c) => api.fetch(stato.percorso, "origin", c), "Fetch");
+  const pull = (strategia = "ff") => {
+    menuPull = false;
+    azioneRete((c) => api.pull(stato.percorso, "origin", strategia, c), "Pull");
+  };
+  const push = () => azioneRete((c) => api.push(stato.percorso, "origin", false, c), "Push");
+  const pushForza = () => { menuPush = false; azioneRete((c) => api.push(stato.percorso, "origin", true, c), "Push forzato"); };
+  const pushTags = () => { menuPush = false; azioneRete((c) => api.pushTags(stato.percorso, "origin", c), "Push tag"); };
 </script>
 
 {#if !stato.percorso}
@@ -60,7 +85,17 @@
         <span class="spazio"></span>
         <div class="sincro">
           <button onclick={fetch} disabled={stato.occupato}>Fetch</button>
-          <button onclick={pull} disabled={stato.occupato}>Pull</button>
+          <div class="menu-wrap">
+            <button onclick={() => pull("ff")} disabled={stato.occupato}>Pull</button>
+            <button class="fantasma" title="Strategia di pull" onclick={() => (menuPull = !menuPull)}>▾</button>
+            {#if menuPull}
+              <div class="menu">
+                <button onclick={() => pull("ff")}>Pull (solo fast-forward)</button>
+                <button onclick={() => pull("merge")}>Pull con merge</button>
+                <button onclick={() => pull("rebase")}>Pull con rebase</button>
+              </div>
+            {/if}
+          </div>
           <div class="menu-wrap">
             <button class="primario" onclick={push} disabled={stato.occupato}>Push</button>
             <button class="fantasma" title="Altre opzioni di push" onclick={() => (menuPush = !menuPush)}>▾</button>
@@ -97,6 +132,10 @@
 
 {#if mostraImpostazioni}
   <Impostazioni chiudi={() => (mostraImpostazioni = false)} />
+{/if}
+
+{#if stato.credAperta}
+  <Credenziali />
 {/if}
 
 {#if stato.nota}

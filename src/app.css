@@ -469,6 +469,23 @@ textarea {
   border-right: 1px solid var(--bordo);
   overflow-y: auto;
 }
+.cerca-commit {
+  position: sticky;
+  top: 0;
+  padding: 8px;
+  background: var(--sfondo2);
+  border-bottom: 1px solid var(--bordo);
+  z-index: 2;
+}
+.cerca-commit input {
+  font-size: 12px;
+  padding: 5px 8px;
+}
+.carica-altri {
+  display: block;
+  width: calc(100% - 16px);
+  margin: 8px;
+}
 .voce-commit {
   padding: 10px 14px;
   border-bottom: 1px solid var(--bordo);

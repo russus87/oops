@@ -1,7 +1,18 @@
 // Versione dell'app e changelog, mostrati nel pannello Info.
-export const VERSIONE = "0.3.0";
+export const VERSIONE = "0.4.0";
 
 export const changelog = [
+  {
+    versione: "0.4.0",
+    note: [
+      "Pull con merge o rebase quando i rami divergono (non solo fast-forward)",
+      "Richiesta credenziali in-app (HTTPS o chiave SSH) quando servono",
+      "Ricerca nella cronologia e caricamento progressivo dei commit",
+      "Ripristina un singolo file alla versione di un commit",
+      "Condensa (squash) di più commit in uno",
+      "Stash: messaggio e anteprima del contenuto (diff) con applica/pop/elimina",
+    ],
+  },
   {
     versione: "0.3.0",
     note: [

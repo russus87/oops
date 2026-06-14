@@ -116,6 +116,21 @@ pub struct ConfigUtente {
     pub email: String,
 }
 
+/// Credenziali fornite dall'utente per un'operazione di rete (tutte opzionali).
+/// Non vengono mai salvate su disco: arrivano dalla UI solo per la singola
+/// operazione (push/pull/clone) e poi spariscono.
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct Credenziali {
+    /// Nome utente (per HTTPS).
+    pub utente: Option<String>,
+    /// Password o token di accesso (per HTTPS).
+    pub password: Option<String>,
+    /// Percorso a una chiave privata SSH da usare.
+    pub chiave: Option<String>,
+    /// Passphrase della chiave SSH.
+    pub passphrase: Option<String>,
+}
+
 /// Un remoto configurato (nome + URL).
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Remoto {

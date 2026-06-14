@@ -73,6 +73,20 @@ pub fn cherry_pick(percorso: &str, id: &str) -> Result<(), String> {
     repo.cleanup_state().map_err(|e| e.to_string())
 }
 
+/// Ripristina un singolo file alla versione che aveva in un certo commit
+/// (git restore --source <commit> <file>): aggiorna cartella e stage.
+pub fn ripristina_file(percorso: &str, id: &str, file: &str) -> Result<(), String> {
+    let repo = crate::apri(percorso)?;
+    let oid = Oid::from_str(id).map_err(|e| e.to_string())?;
+    let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+    let albero = commit.tree().map_err(|e| e.to_string())?;
+
+    let mut co = CheckoutBuilder::new();
+    co.path(file).force().update_index(true);
+    repo.checkout_tree(albero.as_object(), Some(&mut co))
+        .map_err(|e| e.to_string())
+}
+
 /// Annulla un commit creandone uno nuovo che ne inverte le modifiche
 /// (git revert). In caso di conflitti restituisce un errore.
 pub fn revert(percorso: &str, id: &str) -> Result<(), String> {

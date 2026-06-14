@@ -65,6 +65,38 @@ pub fn elimina(percorso: &str, indice: usize) -> Result<(), String> {
     repo.stash_drop(indice).map_err(|e| e.to_string())
 }
 
+/// Diff di uno stash rispetto al suo punto di partenza (cosa contiene).
+pub fn diff(percorso: &str, indice: usize) -> Result<String, String> {
+    let mut repo = crate::apri(percorso)?;
+
+    // Trova l'id del commit-stash corrispondente all'indice.
+    let mut oid = None;
+    repo.stash_foreach(|i, _msg, id| {
+        if i == indice {
+            oid = Some(*id);
+            false
+        } else {
+            true
+        }
+    })
+    .map_err(|e| e.to_string())?;
+    let oid = oid.ok_or_else(|| format!("stash {indice} non trovato"))?;
+
+    let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+    let albero = commit.tree().map_err(|e| e.to_string())?;
+    // Il primo genitore dello stash è lo stato di partenza (la base).
+    let base = commit
+        .parent(0)
+        .map_err(|e| e.to_string())?
+        .tree()
+        .map_err(|e| e.to_string())?;
+
+    let diff = repo
+        .diff_tree_to_tree(Some(&base), Some(&albero), None)
+        .map_err(|e| e.to_string())?;
+    crate::diff::in_testo(&diff)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

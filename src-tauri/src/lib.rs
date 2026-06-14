@@ -8,8 +8,8 @@
 use std::path::PathBuf;
 
 use oops_core::model::{
-    ConfigUtente, FileModificato, Ramo, Remoto, RepoRecente, StatoRepo, Tag, VoceBlame, VoceLog,
-    VoceStash,
+    ConfigUtente, Credenziali, FileModificato, Ramo, Remoto, RepoRecente, StatoRepo, Tag,
+    VoceBlame, VoceLog, VoceStash,
 };
 use oops_core::{
     azioni, blame, commit, conflitti, diff, rami, remote, repo, stage, stash, storage, tag,
@@ -32,8 +32,12 @@ fn init_repo(percorso: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn clona(url: String, destinazione: String) -> Result<String, String> {
-    repo::clona(&url, &destinazione)
+fn clona(
+    url: String,
+    destinazione: String,
+    cred: Option<Credenziali>,
+) -> Result<String, String> {
+    repo::clona(&url, &destinazione, cred)
 }
 
 // ---- Stato e cronologia ----
@@ -119,6 +123,16 @@ fn ultimo_messaggio(percorso: String) -> Result<String, String> {
     commit::ultimo_messaggio(&percorso)
 }
 
+#[tauri::command]
+fn condensa(percorso: String, id: String, messaggio: String) -> Result<String, String> {
+    commit::condensa(&percorso, &id, &messaggio)
+}
+
+#[tauri::command]
+fn ripristina_file(percorso: String, id: String, file: String) -> Result<(), String> {
+    azioni::ripristina_file(&percorso, &id, &file)
+}
+
 // ---- Diff ----
 
 #[tauri::command]
@@ -187,6 +201,11 @@ fn stash_pop(percorso: String, indice: usize) -> Result<(), String> {
 #[tauri::command]
 fn stash_elimina(percorso: String, indice: usize) -> Result<(), String> {
     stash::elimina(&percorso, indice)
+}
+
+#[tauri::command]
+fn stash_diff(percorso: String, indice: usize) -> Result<String, String> {
+    stash::diff(&percorso, indice)
 }
 
 // ---- Tag ----
@@ -307,28 +326,33 @@ fn remoti_lista(percorso: String) -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
-fn fetch(percorso: String, remoto: String) -> Result<(), String> {
-    remote::fetch(&percorso, &remoto)
+fn fetch(percorso: String, remoto: String, cred: Option<Credenziali>) -> Result<(), String> {
+    remote::fetch(&percorso, &remoto, cred)
 }
 
 #[tauri::command]
-fn pull(percorso: String, remoto: String) -> Result<String, String> {
-    remote::pull(&percorso, &remoto)
+fn pull(
+    percorso: String,
+    remoto: String,
+    strategia: String,
+    cred: Option<Credenziali>,
+) -> Result<String, String> {
+    remote::pull(&percorso, &remoto, &strategia, cred)
 }
 
 #[tauri::command]
-fn push(percorso: String, remoto: String) -> Result<(), String> {
-    remote::push(&percorso, &remoto)
+fn push(
+    percorso: String,
+    remoto: String,
+    forza: bool,
+    cred: Option<Credenziali>,
+) -> Result<(), String> {
+    remote::push(&percorso, &remoto, forza, cred)
 }
 
 #[tauri::command]
-fn push_forza(percorso: String, remoto: String) -> Result<(), String> {
-    remote::push_forza(&percorso, &remoto)
-}
-
-#[tauri::command]
-fn push_tags(percorso: String, remoto: String) -> Result<(), String> {
-    remote::push_tags(&percorso, &remoto)
+fn push_tags(percorso: String, remoto: String, cred: Option<Credenziali>) -> Result<(), String> {
+    remote::push_tags(&percorso, &remoto, cred)
 }
 
 #[tauri::command]
@@ -352,8 +376,13 @@ fn remoto_rimuovi(percorso: String, nome: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn elimina_ramo_remoto(percorso: String, remoto: String, ramo: String) -> Result<(), String> {
-    remote::elimina_ramo_remoto(&percorso, &remoto, &ramo)
+fn elimina_ramo_remoto(
+    percorso: String,
+    remoto: String,
+    ramo: String,
+    cred: Option<Credenziali>,
+) -> Result<(), String> {
+    remote::elimina_ramo_remoto(&percorso, &remoto, &ramo, cred)
 }
 
 // ---- Repository recenti ----
@@ -412,6 +441,8 @@ pub fn run() {
             crea_commit,
             amend,
             ultimo_messaggio,
+            condensa,
+            ripristina_file,
             diff_file,
             diff_commit,
             lista_file_commit,
@@ -423,6 +454,7 @@ pub fn run() {
             stash_applica,
             stash_pop,
             stash_elimina,
+            stash_diff,
             tag_lista,
             tag_crea,
             tag_elimina,
@@ -452,7 +484,6 @@ pub fn run() {
             fetch,
             pull,
             push,
-            push_forza,
             push_tags,
             recenti_lista,
             recenti_aggiungi,

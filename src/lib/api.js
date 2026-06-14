@@ -5,7 +5,8 @@ import { invoke } from "@tauri-apps/api/core";
 // ---- Apertura repository ----
 export const apriRepo = (percorso) => invoke("apri_repo", { percorso });
 export const initRepo = (percorso) => invoke("init_repo", { percorso });
-export const clona = (url, destinazione) => invoke("clona", { url, destinazione });
+export const clona = (url, destinazione, cred = null) =>
+  invoke("clona", { url, destinazione, cred });
 
 // ---- Stato e cronologia ----
 export const stato = (percorso) => invoke("stato", { percorso });
@@ -31,6 +32,10 @@ export const creaCommit = (percorso, messaggio, nome = "", email = "") =>
   invoke("crea_commit", { percorso, messaggio, nome, email });
 export const amend = (percorso, messaggio) => invoke("amend", { percorso, messaggio });
 export const ultimoMessaggio = (percorso) => invoke("ultimo_messaggio", { percorso });
+export const condensa = (percorso, id, messaggio) =>
+  invoke("condensa", { percorso, id, messaggio });
+export const ripristinaFile = (percorso, id, file) =>
+  invoke("ripristina_file", { percorso, id, file });
 
 // ---- Diff ----
 export const diffFile = (percorso, file, inStage) =>
@@ -56,6 +61,7 @@ export const stashApplica = (percorso, indice) =>
 export const stashPop = (percorso, indice) => invoke("stash_pop", { percorso, indice });
 export const stashElimina = (percorso, indice) =>
   invoke("stash_elimina", { percorso, indice });
+export const stashDiff = (percorso, indice) => invoke("stash_diff", { percorso, indice });
 
 // ---- Tag ----
 export const tagLista = (percorso) => invoke("tag_lista", { percorso });
@@ -104,16 +110,16 @@ export const remotoAggiungi = (percorso, nome, url) =>
 export const remotoImpostaUrl = (percorso, nome, url) =>
   invoke("remoto_imposta_url", { percorso, nome, url });
 export const remotoRimuovi = (percorso, nome) => invoke("remoto_rimuovi", { percorso, nome });
-export const eliminaRamoRemoto = (percorso, remoto, ramo) =>
-  invoke("elimina_ramo_remoto", { percorso, remoto, ramo });
-export const fetch = (percorso, remoto = "origin") =>
-  invoke("fetch", { percorso, remoto });
-export const pull = (percorso, remoto = "origin") => invoke("pull", { percorso, remoto });
-export const push = (percorso, remoto = "origin") => invoke("push", { percorso, remoto });
-export const pushForza = (percorso, remoto = "origin") =>
-  invoke("push_forza", { percorso, remoto });
-export const pushTags = (percorso, remoto = "origin") =>
-  invoke("push_tags", { percorso, remoto });
+export const eliminaRamoRemoto = (percorso, remoto, ramo, cred = null) =>
+  invoke("elimina_ramo_remoto", { percorso, remoto, ramo, cred });
+export const fetch = (percorso, remoto = "origin", cred = null) =>
+  invoke("fetch", { percorso, remoto, cred });
+export const pull = (percorso, remoto = "origin", strategia = "ff", cred = null) =>
+  invoke("pull", { percorso, remoto, strategia, cred });
+export const push = (percorso, remoto = "origin", forza = false, cred = null) =>
+  invoke("push", { percorso, remoto, forza, cred });
+export const pushTags = (percorso, remoto = "origin", cred = null) =>
+  invoke("push_tags", { percorso, remoto, cred });
 
 // ---- Repository recenti ----
 export const recentiLista = () => invoke("recenti_lista");

@@ -22,13 +22,14 @@ pub fn init(percorso: &str) -> Result<String, String> {
 }
 
 /// Clona un repository remoto in una cartella locale.
-pub fn clona(url: &str, destinazione: &str) -> Result<String, String> {
+pub fn clona(
+    url: &str,
+    destinazione: &str,
+    cred: Option<crate::model::Credenziali>,
+) -> Result<String, String> {
     // Le credenziali (per repo privati) sono gestite dai callback del modulo remote.
-    let mut callbacks = git2::RemoteCallbacks::new();
-    callbacks.credentials(crate::remote::credenziali);
-
     let mut fo = git2::FetchOptions::new();
-    fo.remote_callbacks(callbacks);
+    fo.remote_callbacks(crate::remote::costruisci_callbacks(cred));
 
     let mut builder = git2::build::RepoBuilder::new();
     builder.fetch_options(fo);

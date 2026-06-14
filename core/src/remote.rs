@@ -1,36 +1,50 @@
-//! Remoti: elenco e operazioni di rete (fetch, pull, push).
+//! Remoti: elenco, gestione e operazioni di rete (fetch, pull, push).
 //!
-//! Le credenziali vengono prese dall'agent SSH o dal credential helper di
-//! sistema (lo stesso che usa `git` da terminale), così funziona con
-//! GitHub/GitLab senza salvare password nell'app.
+//! Le credenziali, se non passate esplicitamente dalla UI, vengono prese
+//! dall'agent SSH o dal credential helper di sistema (lo stesso che usa `git`
+//! da terminale). Le credenziali passate dall'utente NON vengono mai salvate.
+
+use std::path::Path;
 
 use git2::build::CheckoutBuilder;
 use git2::{
     Cred, CredentialType, FetchOptions, PushOptions, RemoteCallbacks, Repository,
 };
 
-use crate::model::Remoto;
+use crate::model::{Credenziali, Remoto};
 
-/// Callback per le credenziali, condiviso da clone/fetch/push.
-pub fn credenziali(
-    url: &str,
-    utente: Option<&str>,
-    permessi: CredentialType,
-) -> Result<Cred, git2::Error> {
-    if permessi.contains(CredentialType::SSH_KEY) {
-        Cred::ssh_key_from_agent(utente.unwrap_or("git"))
-    } else if permessi.contains(CredentialType::USER_PASS_PLAINTEXT) {
-        let cfg = git2::Config::open_default()?;
-        Cred::credential_helper(&cfg, url, utente)
-    } else {
-        Cred::default()
-    }
-}
-
-/// Crea i callback di rete con la gestione credenziali già collegata.
-fn callbacks() -> RemoteCallbacks<'static> {
+/// Crea i callback di rete con la gestione delle credenziali.
+/// Se `cred` è presente usa quelle; altrimenti ricade su agent/credential helper.
+pub fn costruisci_callbacks(cred: Option<Credenziali>) -> RemoteCallbacks<'static> {
     let mut cb = RemoteCallbacks::new();
-    cb.credentials(credenziali);
+    cb.credentials(move |url, utente, permessi| {
+        if permessi.contains(CredentialType::SSH_KEY) {
+            // Chiave SSH: se l'utente ha indicato un file di chiave lo usiamo,
+            // altrimenti proviamo l'agent SSH.
+            if let Some(c) = &cred {
+                if let Some(chiave) = &c.chiave {
+                    return Cred::ssh_key(
+                        utente.unwrap_or("git"),
+                        None,
+                        Path::new(chiave),
+                        c.passphrase.as_deref(),
+                    );
+                }
+            }
+            Cred::ssh_key_from_agent(utente.unwrap_or("git"))
+        } else if permessi.contains(CredentialType::USER_PASS_PLAINTEXT) {
+            // HTTPS: usa utente/password forniti, altrimenti il credential helper.
+            if let Some(c) = &cred {
+                if let (Some(u), Some(p)) = (&c.utente, &c.password) {
+                    return Cred::userpass_plaintext(u, p);
+                }
+            }
+            let cfg = git2::Config::open_default()?;
+            Cred::credential_helper(&cfg, url, utente)
+        } else {
+            Cred::default()
+        }
+    });
     cb
 }
 
@@ -79,45 +93,55 @@ pub fn rimuovi(percorso: &str, nome: &str) -> Result<(), String> {
 }
 
 /// Carica tutte le tag sul remoto.
-pub fn push_tags(percorso: &str, remoto: &str) -> Result<(), String> {
+pub fn push_tags(percorso: &str, remoto: &str, cred: Option<Credenziali>) -> Result<(), String> {
     let repo = crate::apri(percorso)?;
     let mut r = repo.find_remote(remoto).map_err(|e| e.to_string())?;
     let mut po = PushOptions::new();
-    po.remote_callbacks(callbacks());
+    po.remote_callbacks(costruisci_callbacks(cred));
     r.push(&["refs/tags/*:refs/tags/*"], Some(&mut po))
         .map_err(|e| e.to_string())
 }
 
 /// Elimina un ramo sul remoto (git push origin --delete <ramo>).
-pub fn elimina_ramo_remoto(percorso: &str, remoto: &str, ramo: &str) -> Result<(), String> {
+pub fn elimina_ramo_remoto(
+    percorso: &str,
+    remoto: &str,
+    ramo: &str,
+    cred: Option<Credenziali>,
+) -> Result<(), String> {
     let repo = crate::apri(percorso)?;
     let mut r = repo.find_remote(remoto).map_err(|e| e.to_string())?;
     let mut po = PushOptions::new();
-    po.remote_callbacks(callbacks());
+    po.remote_callbacks(costruisci_callbacks(cred));
     // Una refspec con il lato sinistro vuoto cancella il ref remoto.
     r.push(&[format!(":refs/heads/{ramo}")], Some(&mut po))
         .map_err(|e| e.to_string())
 }
 
 /// Scarica gli aggiornamenti dal remoto senza toccare i file (git fetch).
-pub fn fetch(percorso: &str, remoto: &str) -> Result<(), String> {
+pub fn fetch(percorso: &str, remoto: &str, cred: Option<Credenziali>) -> Result<(), String> {
     let repo = crate::apri(percorso)?;
     let mut r = repo.find_remote(remoto).map_err(|e| e.to_string())?;
     let mut fo = FetchOptions::new();
-    fo.remote_callbacks(callbacks());
+    fo.remote_callbacks(costruisci_callbacks(cred));
     // Passando una lista vuota di refspec, git2 usa quelle del remoto.
     let refspec: [&str; 0] = [];
     r.fetch(&refspec, Some(&mut fo), None).map_err(|e| e.to_string())
 }
 
 /// Scarica e integra le modifiche del ramo corrente (git pull).
-/// Gestisce solo "già aggiornato" e fast-forward; se i due lati divergono
-/// chiede di fare prima un merge/push manuale (per non creare pasticci).
-pub fn pull(percorso: &str, remoto: &str) -> Result<String, String> {
+/// `strategia`: "ff" (solo fast-forward), "merge" (crea un commit di merge sui
+/// rami divergenti) o "rebase" (riapplica i tuoi commit sopra al remoto).
+pub fn pull(
+    percorso: &str,
+    remoto: &str,
+    strategia: &str,
+    cred: Option<Credenziali>,
+) -> Result<String, String> {
     let repo = crate::apri(percorso)?;
 
     // Prima un fetch.
-    fetch(percorso, remoto)?;
+    fetch(percorso, remoto, cred)?;
 
     // Ramo corrente e suo corrispondente remoto.
     let head = repo.head().map_err(|e| e.to_string())?;
@@ -146,41 +170,101 @@ pub fn pull(percorso: &str, remoto: &str) -> Result<String, String> {
             .map_err(|e| e.to_string())?;
         return Ok("aggiornato (fast-forward)".into());
     }
-    Err("le modifiche locali e remote divergono: serve un merge manuale".into())
+
+    // I due rami divergono: si decide in base alla strategia scelta.
+    match strategia {
+        "merge" => pull_merge(&repo, &annotato, remoto, &ramo),
+        "rebase" => pull_rebase(&repo, &annotato),
+        _ => Err("i rami divergono: scegli pull con 'merge' o 'rebase'".into()),
+    }
 }
 
-/// Carica i commit del ramo corrente sul remoto (git push).
-pub fn push(percorso: &str, remoto: &str) -> Result<(), String> {
+/// Pull divergente con merge: crea un commit di merge col remoto.
+fn pull_merge(
+    repo: &Repository,
+    annotato: &git2::AnnotatedCommit,
+    remoto: &str,
+    ramo: &str,
+) -> Result<String, String> {
+    repo.merge(&[annotato], None, None).map_err(|e| e.to_string())?;
+    if repo.index().map_err(|e| e.to_string())?.has_conflicts() {
+        return Err("merge con conflitti: risolvi i file e fai un commit".into());
+    }
+    let albero_id = repo
+        .index()
+        .map_err(|e| e.to_string())?
+        .write_tree()
+        .map_err(|e| e.to_string())?;
+    let albero = repo.find_tree(albero_id).map_err(|e| e.to_string())?;
+    let firma = repo
+        .signature()
+        .or_else(|_| git2::Signature::now("Oops", "oops@local"))
+        .map_err(|e| e.to_string())?;
+    let nostro = repo.head().map_err(|e| e.to_string())?.peel_to_commit().map_err(|e| e.to_string())?;
+    let loro = repo.find_commit(annotato.id()).map_err(|e| e.to_string())?;
+    repo.commit(
+        Some("HEAD"),
+        &firma,
+        &firma,
+        &format!("Merge di {remoto}/{ramo}"),
+        &albero,
+        &[&nostro, &loro],
+    )
+    .map_err(|e| e.to_string())?;
+    repo.cleanup_state().map_err(|e| e.to_string())?;
+    Ok("aggiornato (merge)".into())
+}
+
+/// Pull divergente con rebase: riapplica i commit locali sopra al remoto.
+fn pull_rebase(repo: &Repository, annotato: &git2::AnnotatedCommit) -> Result<String, String> {
+    let firma = repo
+        .signature()
+        .or_else(|_| git2::Signature::now("Oops", "oops@local"))
+        .map_err(|e| e.to_string())?;
+    let mut rb = repo
+        .rebase(None, Some(annotato), None, None)
+        .map_err(|e| e.to_string())?;
+    loop {
+        match rb.next() {
+            None => break,
+            Some(Ok(_op)) => {}
+            Some(Err(e)) => {
+                let _ = rb.abort();
+                return Err(e.to_string());
+            }
+        }
+        if repo.index().map_err(|e| e.to_string())?.has_conflicts() {
+            let _ = rb.abort();
+            return Err("rebase con conflitti: annullato".into());
+        }
+        rb.commit(None, &firma, None).map_err(|e| e.to_string())?;
+    }
+    rb.finish(Some(&firma)).map_err(|e| e.to_string())?;
+    Ok("aggiornato (rebase)".into())
+}
+
+/// Carica i commit del ramo corrente sul remoto (git push). Con `forza=true`
+/// riscrive la storia sul remoto (usare con cautela).
+pub fn push(
+    percorso: &str,
+    remoto: &str,
+    forza: bool,
+    cred: Option<Credenziali>,
+) -> Result<(), String> {
     let repo = crate::apri(percorso)?;
     let head = repo.head().map_err(|e| e.to_string())?;
     let ramo = head.shorthand().ok_or("ramo corrente sconosciuto")?;
 
     let mut r = repo.find_remote(remoto).map_err(|e| e.to_string())?;
     let mut po = PushOptions::new();
-    po.remote_callbacks(callbacks());
+    po.remote_callbacks(costruisci_callbacks(cred));
 
-    let refspec = format!("refs/heads/{ramo}:refs/heads/{ramo}");
+    // Il "+" iniziale indica un push forzato.
+    let prefisso = if forza { "+" } else { "" };
+    let refspec = format!("{prefisso}refs/heads/{ramo}:refs/heads/{ramo}");
     r.push(&[&refspec], Some(&mut po)).map_err(|e| e.to_string())?;
 
-    // Collega il ramo locale al suo upstream, così d'ora in poi conosciamo
-    // l'avanti/indietro senza dover indovinare.
-    imposta_upstream(&repo, ramo, remoto);
-    Ok(())
-}
-
-/// Come `push` ma forzato (riscrive la storia sul remoto). Usare con cautela.
-pub fn push_forza(percorso: &str, remoto: &str) -> Result<(), String> {
-    let repo = crate::apri(percorso)?;
-    let head = repo.head().map_err(|e| e.to_string())?;
-    let ramo = head.shorthand().ok_or("ramo corrente sconosciuto")?;
-
-    let mut r = repo.find_remote(remoto).map_err(|e| e.to_string())?;
-    let mut po = PushOptions::new();
-    po.remote_callbacks(callbacks());
-
-    // Il "+" davanti alla refspec indica un push forzato.
-    let refspec = format!("+refs/heads/{ramo}:refs/heads/{ramo}");
-    r.push(&[&refspec], Some(&mut po)).map_err(|e| e.to_string())?;
+    // Collega il ramo locale al suo upstream, così conosciamo l'avanti/indietro.
     imposta_upstream(&repo, ramo, remoto);
     Ok(())
 }

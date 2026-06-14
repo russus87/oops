@@ -4,6 +4,34 @@ Interfaccia grafica moderna per Git. Rust + Tauri 2 + Svelte 5.
 Stessa impalcatura di Oxiterm (workspace Cargo `core` + `src-tauri`, CI verso repo
 privato `oops` + repo pubblico `oops-dist` con artefatti firmati).
 
+## v0.4.0 (2026-06-14) — Fase 4 (altra tranche corposa)
+
+Build verificata: `cargo test -p oops-core` (10 verdi), `cargo build -p oops` OK,
+`npm run build` OK.
+
+### core/
+- `remote.rs` — riscritto: `costruisci_callbacks(Option<Credenziali>)` (usa
+  utente/password per HTTPS o chiave/passphrase per SSH, altrimenti agent/credential
+  helper). `pull` ora accetta una `strategia`: "ff" / "merge" / "rebase" (sui rami
+  divergenti). `push(forza)` unifica push normale e forzato. Tutte le funzioni di rete
+  (fetch/pull/push/push_tags/elimina_ramo_remoto) e `repo::clona` prendono le credenziali.
+- `azioni.rs` — `ripristina_file` (git restore --source <commit> <file>).
+- `commit.rs` — `condensa` (squash di commit da uno scelto fino a HEAD: soft reset al
+  genitore + commit con l'albero finale).
+- `stash.rs` — `diff` (anteprima del contenuto di uno stash).
+- `model.rs` — `Credenziali { utente, password, chiave, passphrase }` (mai salvate).
+
+### src-tauri/ — comandi aggiornati (credenziali + strategia pull) e nuovi
+(condensa, ripristina_file, stash_diff). `push` ora ha il flag `forza`.
+
+### src/ (frontend)
+- `stato.svelte.js` — `chiediCredenziali()` con Promise (modale gestita da App).
+- `Credenziali.svelte` — modale HTTPS/SSH; `App.svelte` riprova l'operazione di rete
+  con le credenziali quando l'errore è di autenticazione. Menu Pull (ff/merge/rebase).
+- `Cronologia.svelte` — barra di ricerca, "Carica altri commit", pulsante Condensa,
+  ripristino del singolo file da un commit.
+- `BarraLaterale.svelte` — clic su uno stash apre il diff con Applica/Pop/Elimina.
+
 ## v0.3.0 (2026-06-14) — Fase 3 (release corposa: tutto il resto)
 
 Build verificata: `cargo test -p oops-core` (10 test verdi, +rebase e +conflitti),

@@ -3,6 +3,7 @@
   import { confirm } from "@tauri-apps/plugin-dialog";
   import * as api from "../lib/api.js";
   import { stato } from "../lib/stato.svelte.js";
+  import Diff from "./Diff.svelte";
 
   let rami = $state([]);
   let tag = $state([]);
@@ -12,6 +13,8 @@
   let mostraTag = $state(false);
   let nomeTag = $state("");
   let msgTag = $state("");
+  let stashSel = $state(null); // indice dello stash aperto nel dettaglio
+  let stashTesto = $state("");
 
   $effect(() => {
     stato.tic;
@@ -117,20 +120,28 @@
     stato.ricarica();
   }
 
-  async function popStash(indice) {
+  async function apriStash(indice) {
+    stashSel = indice;
+    stashTesto = await api.stashDiff(stato.percorso, indice).catch(() => "");
+  }
+
+  async function applicaStash(indice, pop) {
     try {
-      await api.stashPop(stato.percorso, indice);
+      if (pop) await api.stashPop(stato.percorso, indice);
+      else await api.stashApplica(stato.percorso, indice);
+      stashSel = null;
       stato.avvisa("Stash ripristinato", "ok");
       stato.ricarica();
     } catch (e) {
-      stato.avvisa("Pop dello stash fallito: " + e, "errore");
+      stato.avvisa("Ripristino dello stash fallito: " + e, "errore");
     }
   }
 
   async function eliminaStash(indice, ev) {
-    ev.stopPropagation();
+    if (ev) ev.stopPropagation();
     if (!(await confirm("Eliminare questo stash?"))) return;
     await api.stashElimina(stato.percorso, indice);
+    stashSel = null;
     stato.ricarica();
   }
 </script>
@@ -201,7 +212,7 @@
         <div class="titolo"><span>Stash</span></div>
       </div>
       {#each stash as st}
-        <div class="ramo" title="Clic per ripristinare (pop)" onclick={() => popStash(st.indice)}>
+        <div class="ramo" title="Clic per vedere il contenuto" onclick={() => apriStash(st.indice)}>
           <span class="icona">📦</span>
           <span class="nome">{st.messaggio}</span>
           <span class="ops">
@@ -244,6 +255,25 @@
       <div class="pulsanti">
         <button onclick={() => (mostraTag = false)}>Annulla</button>
         <button class="primario" onclick={creaTag}>Crea tag</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if stashSel !== null}
+  <div class="overlay" onclick={() => (stashSel = null)}>
+    <div class="modale grande" onclick={(e) => e.stopPropagation()}>
+      <div class="modale-testa">
+        <h2>Stash</h2>
+        <div class="tabs-mini">
+          <button onclick={() => applicaStash(stashSel, false)}>Applica</button>
+          <button class="primario" onclick={() => applicaStash(stashSel, true)}>Pop</button>
+          <button class="pericolo" onclick={() => eliminaStash(stashSel, null)}>Elimina</button>
+        </div>
+        <button class="fantasma" onclick={() => (stashSel = null)}>✕</button>
+      </div>
+      <div class="modale-corpo" style="padding:0">
+        <Diff testo={stashTesto} vuoto="Stash vuoto." />
       </div>
     </div>
   </div>
