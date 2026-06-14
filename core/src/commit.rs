@@ -96,6 +96,47 @@ pub fn crea(percorso: &str, messaggio: &str, nome: &str, email: &str) -> Result<
     Ok(oid.to_string())
 }
 
+/// Modifica l'ultimo commit (git commit --amend): aggiorna l'albero con i file
+/// attualmente in stage e, se `messaggio` non è vuoto, ne cambia il testo.
+/// L'autore originale viene mantenuto.
+pub fn amend(percorso: &str, messaggio: &str) -> Result<String, String> {
+    let repo = crate::apri(percorso)?;
+    let ultimo = repo
+        .head()
+        .map_err(|e| e.to_string())?
+        .peel_to_commit()
+        .map_err(|e| e.to_string())?;
+
+    // Nuovo albero dai contenuti dello staging.
+    let albero_id = repo
+        .index()
+        .map_err(|e| e.to_string())?
+        .write_tree()
+        .map_err(|e| e.to_string())?;
+    let albero = repo.find_tree(albero_id).map_err(|e| e.to_string())?;
+
+    let nuovo_msg = if messaggio.trim().is_empty() {
+        None
+    } else {
+        Some(messaggio)
+    };
+
+    let oid = ultimo
+        .amend(Some("HEAD"), None, None, None, nuovo_msg, Some(&albero))
+        .map_err(|e| e.to_string())?;
+    Ok(oid.to_string())
+}
+
+/// Messaggio dell'ultimo commit (per precompilare l'amend). Vuoto se non c'è.
+pub fn ultimo_messaggio(percorso: &str) -> Result<String, String> {
+    let repo = crate::apri(percorso)?;
+    let commit = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
+    match commit {
+        Some(c) => Ok(c.message().unwrap_or("").to_string()),
+        None => Ok(String::new()),
+    }
+}
+
 /// Prepara la firma (autore/committer). Se nome/email sono vuoti prova a
 /// leggerli dalla configurazione di Git; come ultima spiaggia usa un default.
 fn firma<'a>(repo: &Repository, nome: &'a str, email: &'a str) -> Result<Signature<'a>, String> {

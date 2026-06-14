@@ -7,8 +7,10 @@
 
 use std::path::PathBuf;
 
-use oops_core::model::{Ramo, RepoRecente, StatoRepo, VoceLog};
-use oops_core::{commit, diff, rami, remote, repo, stage, storage};
+use oops_core::model::{
+    ConfigUtente, FileModificato, Ramo, RepoRecente, StatoRepo, Tag, VoceLog, VoceStash,
+};
+use oops_core::{azioni, commit, diff, rami, remote, repo, stage, stash, storage, tag};
 use tauri::{Manager, State};
 
 /// Percorso del file JSON con i repository recenti (in app_config_dir).
@@ -82,6 +84,18 @@ fn crea_commit(
     commit::crea(&percorso, &messaggio, &nome, &email)
 }
 
+// ---- Commit: amend ----
+
+#[tauri::command]
+fn amend(percorso: String, messaggio: String) -> Result<String, String> {
+    commit::amend(&percorso, &messaggio)
+}
+
+#[tauri::command]
+fn ultimo_messaggio(percorso: String) -> Result<String, String> {
+    commit::ultimo_messaggio(&percorso)
+}
+
 // ---- Diff ----
 
 #[tauri::command]
@@ -92,6 +106,103 @@ fn diff_file(percorso: String, file: String, in_stage: bool) -> Result<String, S
 #[tauri::command]
 fn diff_commit(percorso: String, id: String) -> Result<String, String> {
     diff::commit(&percorso, &id)
+}
+
+#[tauri::command]
+fn lista_file_commit(percorso: String, id: String) -> Result<Vec<FileModificato>, String> {
+    diff::lista_file_commit(&percorso, &id)
+}
+
+#[tauri::command]
+fn diff_commit_file(percorso: String, id: String, file: String) -> Result<String, String> {
+    diff::commit_file(&percorso, &id, &file)
+}
+
+// ---- Diff per hunk ----
+
+#[tauri::command]
+fn hunk_stage(
+    percorso: String,
+    file: String,
+    indice: usize,
+    in_stage: bool,
+) -> Result<(), String> {
+    diff::hunk_stage(&percorso, &file, indice, in_stage)
+}
+
+#[tauri::command]
+fn hunk_scarta(percorso: String, file: String, indice: usize) -> Result<(), String> {
+    diff::hunk_scarta(&percorso, &file, indice)
+}
+
+// ---- Stash ----
+
+#[tauri::command]
+fn stash_lista(percorso: String) -> Result<Vec<VoceStash>, String> {
+    stash::lista(&percorso)
+}
+
+#[tauri::command]
+fn stash_salva(
+    percorso: String,
+    messaggio: String,
+    includi_non_tracciati: bool,
+) -> Result<(), String> {
+    stash::salva(&percorso, &messaggio, includi_non_tracciati)
+}
+
+#[tauri::command]
+fn stash_applica(percorso: String, indice: usize) -> Result<(), String> {
+    stash::applica(&percorso, indice)
+}
+
+#[tauri::command]
+fn stash_pop(percorso: String, indice: usize) -> Result<(), String> {
+    stash::pop(&percorso, indice)
+}
+
+#[tauri::command]
+fn stash_elimina(percorso: String, indice: usize) -> Result<(), String> {
+    stash::elimina(&percorso, indice)
+}
+
+// ---- Tag ----
+
+#[tauri::command]
+fn tag_lista(percorso: String) -> Result<Vec<Tag>, String> {
+    tag::lista(&percorso)
+}
+
+#[tauri::command]
+fn tag_crea(percorso: String, nome: String, messaggio: String) -> Result<(), String> {
+    tag::crea(&percorso, &nome, &messaggio)
+}
+
+#[tauri::command]
+fn tag_elimina(percorso: String, nome: String) -> Result<(), String> {
+    tag::elimina(&percorso, &nome)
+}
+
+// ---- Azioni su commit (reset, cherry-pick, config autore) ----
+
+#[tauri::command]
+fn reset_commit(percorso: String, id: String, modo: String) -> Result<(), String> {
+    azioni::reset(&percorso, &id, &modo)
+}
+
+#[tauri::command]
+fn cherry_pick(percorso: String, id: String) -> Result<(), String> {
+    azioni::cherry_pick(&percorso, &id)
+}
+
+#[tauri::command]
+fn config_utente(percorso: String) -> Result<ConfigUtente, String> {
+    azioni::config_utente(&percorso)
+}
+
+#[tauri::command]
+fn imposta_config_utente(percorso: String, nome: String, email: String) -> Result<(), String> {
+    azioni::imposta_config_utente(&percorso, &nome, &email)
 }
 
 // ---- Rami ----
@@ -193,8 +304,26 @@ pub fn run() {
             stage_togli_tutto,
             scarta,
             crea_commit,
+            amend,
+            ultimo_messaggio,
             diff_file,
             diff_commit,
+            lista_file_commit,
+            diff_commit_file,
+            hunk_stage,
+            hunk_scarta,
+            stash_lista,
+            stash_salva,
+            stash_applica,
+            stash_pop,
+            stash_elimina,
+            tag_lista,
+            tag_crea,
+            tag_elimina,
+            reset_commit,
+            cherry_pick,
+            config_utente,
+            imposta_config_utente,
             rami_lista,
             ramo_crea,
             ramo_checkout,

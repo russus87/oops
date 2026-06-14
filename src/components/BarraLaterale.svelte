@@ -5,13 +5,20 @@
   import { stato } from "../lib/stato.svelte.js";
 
   let rami = $state([]);
+  let tag = $state([]);
+  let stash = $state([]);
   let mostraNuovo = $state(false);
   let nomeNuovo = $state("");
+  let mostraTag = $state(false);
+  let nomeTag = $state("");
+  let msgTag = $state("");
 
   $effect(() => {
     stato.tic;
     if (!stato.percorso) return;
     api.ramiLista(stato.percorso).then((r) => (rami = r));
+    api.tagLista(stato.percorso).then((t) => (tag = t));
+    api.stashLista(stato.percorso).then((s) => (stash = s));
   });
 
   let locali = $derived(rami.filter((r) => !r.remoto));
@@ -60,6 +67,43 @@
       stato.avvisa(String(e), "errore");
     }
   }
+
+  async function creaTag() {
+    if (!nomeTag.trim()) return;
+    try {
+      await api.tagCrea(stato.percorso, nomeTag.trim(), msgTag);
+      mostraTag = false;
+      nomeTag = "";
+      msgTag = "";
+      stato.ricarica();
+    } catch (e) {
+      stato.avvisa("Creazione tag fallita: " + e, "errore");
+    }
+  }
+
+  async function eliminaTag(nome, ev) {
+    ev.stopPropagation();
+    if (!(await confirm("Eliminare la tag «" + nome + "»?"))) return;
+    await api.tagElimina(stato.percorso, nome);
+    stato.ricarica();
+  }
+
+  async function popStash(indice) {
+    try {
+      await api.stashPop(stato.percorso, indice);
+      stato.avvisa("Stash ripristinato", "ok");
+      stato.ricarica();
+    } catch (e) {
+      stato.avvisa("Pop dello stash fallito: " + e, "errore");
+    }
+  }
+
+  async function eliminaStash(indice, ev) {
+    ev.stopPropagation();
+    if (!(await confirm("Eliminare questo stash?"))) return;
+    await api.stashElimina(stato.percorso, indice);
+    stato.ricarica();
+  }
 </script>
 
 <div class="sidebar">
@@ -100,6 +144,39 @@
         </div>
       {/each}
     {/if}
+
+    <!-- Tag -->
+    <div class="sezione">
+      <div class="titolo">
+        <span>Tag</span>
+        <button class="fantasma" title="Nuova tag" onclick={() => (mostraTag = true)}>＋</button>
+      </div>
+    </div>
+    {#each tag as t}
+      <div class="ramo" title={t.messaggio}>
+        <span class="icona">🏷</span>
+        <span class="nome">{t.nome}</span>
+        <span class="ops">
+          <button class="pericolo" title="Elimina" onclick={(e) => eliminaTag(t.nome, e)}>✕</button>
+        </span>
+      </div>
+    {/each}
+
+    <!-- Stash -->
+    {#if stash.length > 0}
+      <div class="sezione">
+        <div class="titolo"><span>Stash</span></div>
+      </div>
+      {#each stash as st}
+        <div class="ramo" title="Clic per ripristinare (pop)" onclick={() => popStash(st.indice)}>
+          <span class="icona">📦</span>
+          <span class="nome">{st.messaggio}</span>
+          <span class="ops">
+            <button class="pericolo" title="Elimina" onclick={(e) => eliminaStash(st.indice, e)}>✕</button>
+          </span>
+        </div>
+      {/each}
+    {/if}
   </div>
 </div>
 
@@ -114,6 +191,26 @@
       <div class="pulsanti">
         <button onclick={() => (mostraNuovo = false)}>Annulla</button>
         <button class="primario" onclick={crea}>Crea e passa</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if mostraTag}
+  <div class="overlay" onclick={() => (mostraTag = false)}>
+    <div class="modale" onclick={(e) => e.stopPropagation()}>
+      <h2>Nuova tag</h2>
+      <div class="campo">
+        <label for="nt">Nome</label>
+        <input id="nt" bind:value={nomeTag} placeholder="es. v1.0" />
+      </div>
+      <div class="campo">
+        <label for="mt">Messaggio (vuoto = tag leggera)</label>
+        <input id="mt" bind:value={msgTag} placeholder="Descrizione della release" />
+      </div>
+      <div class="pulsanti">
+        <button onclick={() => (mostraTag = false)}>Annulla</button>
+        <button class="primario" onclick={creaTag}>Crea tag</button>
       </div>
     </div>
   </div>

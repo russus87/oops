@@ -86,3 +86,30 @@ pub struct Ramo {
     /// true se è un ramo remoto.
     pub remoto: bool,
 }
+
+/// Una voce della lista degli stash (modifiche messe da parte).
+#[derive(Clone, Serialize, Deserialize)]
+pub struct VoceStash {
+    /// Posizione nella pila degli stash (0 = il più recente).
+    pub indice: usize,
+    /// Messaggio descrittivo dello stash.
+    pub messaggio: String,
+}
+
+/// Una tag (etichetta) del repository.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Tag {
+    /// Nome della tag (es. "v1.0").
+    pub nome: String,
+    /// Messaggio (vuoto se è una tag leggera).
+    pub messaggio: String,
+    /// Hash abbreviato del commit puntato.
+    pub id_breve: String,
+}
+
+/// Nome ed email dell'autore, letti/scritti dalla config di Git.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ConfigUtente {
+    pub nome: String,
+    pub email: String,
+}

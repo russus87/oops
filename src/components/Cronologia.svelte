@@ -1,14 +1,23 @@
 <script>
-  // Vista "Cronologia": elenco dei commit a sinistra, diff del commit a destra.
+  // Vista "Cronologia": elenco commit a sinistra; a destra dettaglio del commit
+  // (azioni + file toccati + diff del file scelto).
+  import { confirm } from "@tauri-apps/plugin-dialog";
   import * as api from "../lib/api.js";
   import { stato } from "../lib/stato.svelte.js";
   import Diff from "./Diff.svelte";
 
   let commit = $state([]);
   let scelto = $state(null); // id del commit selezionato
+  let file = $state([]); // file toccati dal commit
+  let fileScelto = $state(null); // percorso del file mostrato (null = tutto il commit)
   let diffTesto = $state("");
 
-  // Carica la cronologia quando cambia il repo o si richiede un ricarico.
+  const simbolo = {
+    nuovo: "A", modificato: "M", cancellato: "D",
+    rinominato: "R", tipocambiato: "T", conflitto: "!",
+  };
+
+  // Carica la cronologia.
   $effect(() => {
     stato.tic;
     if (!stato.percorso) return;
@@ -18,17 +27,54 @@
     });
   });
 
-  // Carica il diff del commit selezionato.
+  // Quando cambia il commit selezionato, ricarica i file e mostra tutto il diff.
+  $effect(() => {
+    if (!scelto || !stato.percorso) {
+      file = [];
+      return;
+    }
+    fileScelto = null;
+    api.listaFileCommit(stato.percorso, scelto).then((f) => (file = f));
+  });
+
+  // Carica il diff: del file scelto, oppure dell'intero commit.
   $effect(() => {
     if (!scelto || !stato.percorso) {
       diffTesto = "";
       return;
     }
-    api
-      .diffCommit(stato.percorso, scelto)
-      .then((t) => (diffTesto = t))
-      .catch(() => (diffTesto = ""));
+    const p = fileScelto
+      ? api.diffCommitFile(stato.percorso, scelto, fileScelto)
+      : api.diffCommit(stato.percorso, scelto);
+    p.then((t) => (diffTesto = t)).catch(() => (diffTesto = ""));
   });
+
+  async function reset(modo) {
+    const msg =
+      modo === "hard"
+        ? "Reset HARD: le modifiche non salvate andranno PERSE. Procedere?"
+        : "Spostare il ramo corrente a questo commit (" + modo + ")?";
+    if (!(await confirm(msg))) return;
+    try {
+      await api.resetCommit(stato.percorso, scelto, modo);
+      stato.avvisa("Reset " + modo + " eseguito", "ok");
+      stato.ricarica();
+    } catch (e) {
+      stato.avvisa("Reset fallito: " + e, "errore");
+    }
+  }
+
+  async function cherry() {
+    try {
+      await api.cherryPick(stato.percorso, scelto);
+      stato.avvisa("Cherry-pick eseguito 🍒", "ok");
+      stato.ricarica();
+    } catch (e) {
+      stato.avvisa(String(e), "errore");
+    }
+  }
+
+  let datiScelto = $derived(commit.find((c) => c.id === scelto));
 </script>
 
 <div class="cronologia">
@@ -49,5 +95,41 @@
     {/each}
   </div>
 
-  <Diff testo={diffTesto} vuoto="Seleziona un commit per vederne le modifiche." />
+  <div class="commit-dettaglio">
+    {#if datiScelto}
+      <div class="azioni-commit">
+        <span class="hash">{datiScelto.id_breve}</span>
+        <span class="spazio"></span>
+        <span class="reset-label">Reset:</span>
+        <button onclick={() => reset("soft")}>soft</button>
+        <button onclick={() => reset("mixed")}>mixed</button>
+        <button class="pericolo" onclick={() => reset("hard")}>hard</button>
+        <button onclick={cherry} title="Applica questo commit sul ramo corrente">🍒 Cherry-pick</button>
+      </div>
+
+      <div class="file-commit">
+        <div
+          class="riga-file"
+          class:scelto={fileScelto === null}
+          onclick={() => (fileScelto = null)}
+        >
+          <span class="nome">Tutti i file ({file.length})</span>
+        </div>
+        {#each file as f}
+          <div
+            class="riga-file"
+            class:scelto={fileScelto === f.percorso}
+            onclick={() => (fileScelto = f.percorso)}
+          >
+            <span class="stato {f.stato}">{simbolo[f.stato]}</span>
+            <span class="nome">{f.percorso}</span>
+          </div>
+        {/each}
+      </div>
+
+      <Diff testo={diffTesto} vuoto="Nessuna differenza." />
+    {:else}
+      <div class="diff-vuoto">Seleziona un commit.</div>
+    {/if}
+  </div>
 </div>

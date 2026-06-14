@@ -10,6 +10,26 @@
 
   let vista = $state("modifiche"); // "modifiche" | "cronologia"
   let info = $state(null); // StatoRepo, serve alla toolbar per avanti/indietro
+  let mostraConfig = $state(false);
+  let cfgNome = $state("");
+  let cfgEmail = $state("");
+
+  async function apriConfig() {
+    const c = await api.configUtente(stato.percorso).catch(() => ({ nome: "", email: "" }));
+    cfgNome = c.nome;
+    cfgEmail = c.email;
+    mostraConfig = true;
+  }
+
+  async function salvaConfig() {
+    try {
+      await api.impostaConfigUtente(stato.percorso, cfgNome, cfgEmail);
+      mostraConfig = false;
+      stato.avvisa("Autore impostato", "ok");
+    } catch (e) {
+      stato.avvisa("Salvataggio fallito: " + e, "errore");
+    }
+  }
 
   $effect(() => {
     stato.tic;
@@ -57,6 +77,7 @@
           <button onclick={fetch} disabled={stato.occupato}>Fetch</button>
           <button onclick={pull} disabled={stato.occupato}>Pull</button>
           <button class="primario" onclick={push} disabled={stato.occupato}>Push</button>
+          <button class="fantasma" title="Imposta autore (nome/email)" onclick={apriConfig}>⚙</button>
         </div>
       </div>
 
@@ -75,6 +96,26 @@
         {:else}
           <Cronologia />
         {/if}
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if mostraConfig}
+  <div class="overlay" onclick={() => (mostraConfig = false)}>
+    <div class="modale" onclick={(e) => e.stopPropagation()}>
+      <h2>Autore dei commit</h2>
+      <div class="campo">
+        <label for="cn">Nome</label>
+        <input id="cn" bind:value={cfgNome} placeholder="Mario Rossi" />
+      </div>
+      <div class="campo">
+        <label for="ce">Email</label>
+        <input id="ce" bind:value={cfgEmail} placeholder="mario@esempio.it" />
+      </div>
+      <div class="pulsanti">
+        <button onclick={() => (mostraConfig = false)}>Annulla</button>
+        <button class="primario" onclick={salvaConfig}>Salva</button>
       </div>
     </div>
   </div>

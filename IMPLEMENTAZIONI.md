@@ -4,6 +4,31 @@ Interfaccia grafica moderna per Git. Rust + Tauri 2 + Svelte 5.
 Stessa impalcatura di Oxiterm (workspace Cargo `core` + `src-tauri`, CI verso repo
 privato `oops` + repo pubblico `oops-dist` con artefatti firmati).
 
+## v0.2.0 (2026-06-14) — Fase 2
+
+Aggiunte funzioni "da Git GUI serio". Build verificata: `cargo test -p oops-core`
+(8 test verdi), `cargo build -p oops` OK, `npm run build` OK.
+
+### core/ (nuovi moduli + estensioni)
+- `stash.rs` — `lista`/`salva`(con file non tracciati)/`applica`/`pop`/`elimina`. + test.
+- `tag.rs` — `lista` (distingue leggere/annotate), `crea`, `elimina`. + test.
+- `azioni.rs` — `reset` (soft/mixed/hard), `cherry_pick` (applica + commit con autore
+  originale, errore sui conflitti), `config_utente`/`imposta_config_utente`.
+- `diff.rs` — `lista_file_commit`, `commit_file` (diff di un file in un commit),
+  `hunk_stage`/`hunk_scarta`: stage/unstage/scarta del **singolo hunk** via
+  `repo.apply` + `hunk_callback`, usando `DiffOptions.reverse(true)` per le direzioni inverse.
+- `commit.rs` — `amend` (riscrive l'ultimo commit con lo stage corrente) e
+  `ultimo_messaggio` (per precompilare l'amend).
+
+### src-tauri/ — +21 comandi ponte per le funzioni sopra.
+
+### src/ (frontend)
+- `Diff.svelte` — divide il diff in hunk; con `onHunk` mostra i pulsanti per hunk.
+- `Modifiche.svelte` — azioni per-hunk, checkbox **Amend**, pulsante **Stash**.
+- `Cronologia.svelte` — lista file del commit + diff per file, azioni Reset/Cherry-pick.
+- `BarraLaterale.svelte` — sezioni **Tag** (crea/elimina) e **Stash** (pop/elimina).
+- `App.svelte` — modale ⚙ per impostare nome/email dell'autore.
+
 ## v0.1.0 (2026-06-14) — Fase 1
 
 Prima versione funzionante. Build verificata: `cargo test -p oops-core` (6 test

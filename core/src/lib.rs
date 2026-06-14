@@ -8,8 +8,12 @@
 //! - `rami`    rami: elenco, creazione, checkout, eliminazione, merge
 //! - `diff`    differenze di un file o di un commit (testo unificato)
 //! - `remote`  remoti: elenco, fetch, pull, push
+//! - `stash`   modifiche messe da parte (stash)
+//! - `tag`     etichette (tag) del repository
+//! - `azioni`  reset, cherry-pick, config dell'autore
 //! - `storage` elenco dei repository aperti di recente (file JSON)
 
+pub mod azioni;
 pub mod commit;
 pub mod diff;
 pub mod model;
@@ -17,7 +21,9 @@ pub mod rami;
 pub mod remote;
 pub mod repo;
 pub mod stage;
+pub mod stash;
 pub mod storage;
+pub mod tag;
 
 use git2::Repository;
 use std::path::Path;

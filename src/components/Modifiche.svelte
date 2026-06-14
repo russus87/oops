@@ -9,6 +9,7 @@
   let messaggio = $state("");
   let scelto = $state(null); // { file, inStage }
   let diffTesto = $state("");
+  let amendOn = $state(false); // se true, il commit corregge l'ultimo
 
   // Simboli per lo stato di un file.
   const simbolo = {
@@ -87,12 +88,51 @@
   async function commit() {
     if (!messaggio.trim()) return;
     try {
-      await api.creaCommit(stato.percorso, messaggio);
+      if (amendOn) {
+        await api.amend(stato.percorso, messaggio);
+        stato.avvisa("Ultimo commit corretto ✏️", "ok");
+      } else {
+        await api.creaCommit(stato.percorso, messaggio);
+        stato.avvisa("Commit creato 🎉", "ok");
+      }
       messaggio = "";
-      stato.avvisa("Commit creato 🎉", "ok");
+      amendOn = false;
       stato.ricarica();
     } catch (e) {
       stato.avvisa("Commit fallito: " + e, "errore");
+    }
+  }
+
+  // Attiva/disattiva amend: quando si attiva, precompila col vecchio messaggio.
+  async function toggleAmend() {
+    amendOn = !amendOn;
+    if (amendOn && !messaggio.trim()) {
+      messaggio = await api.ultimoMessaggio(stato.percorso).catch(() => "");
+    }
+  }
+
+  // Mette da parte tutte le modifiche correnti (stash).
+  async function stash() {
+    try {
+      await api.stashSalva(stato.percorso, "", true);
+      stato.avvisa("Modifiche messe da parte 📦", "ok");
+      stato.ricarica();
+    } catch (e) {
+      stato.avvisa("Stash fallito: " + e, "errore");
+    }
+  }
+
+  // Azione su un singolo hunk dal pannello Diff.
+  async function suHunk(indice, tipo) {
+    try {
+      if (tipo === "scarta") {
+        await api.hunkScarta(stato.percorso, scelto.file, indice);
+      } else {
+        await api.hunkStage(stato.percorso, scelto.file, indice, tipo === "unstage");
+      }
+      stato.ricarica();
+    } catch (e) {
+      stato.avvisa("Operazione sul hunk fallita: " + e, "errore");
     }
   }
 </script>
@@ -155,19 +195,26 @@
       <div class="commit-box">
         <textarea
           bind:value={messaggio}
-          placeholder={s.in_stage.length ? "Messaggio del commit…" : "Aggiungi dei file per fare un commit"}
+          placeholder={amendOn ? "Nuovo messaggio (vuoto = lascia invariato)" : s.in_stage.length ? "Messaggio del commit…" : "Aggiungi dei file per fare un commit"}
         ></textarea>
+        <div class="commit-azioni">
+          <label class="amend" title="Correggi l'ultimo commit invece di crearne uno nuovo">
+            <input type="checkbox" checked={amendOn} onchange={toggleAmend} />
+            Amend
+          </label>
+          <button class="fantasma" onclick={stash} title="Metti da parte le modifiche">📦 Stash</button>
+        </div>
         <button
           class="primario"
           style="width:100%"
-          disabled={!messaggio.trim() || s.in_stage.length === 0}
+          disabled={amendOn ? !messaggio.trim() : !messaggio.trim() || s.in_stage.length === 0}
           onclick={commit}
         >
-          Commit su {s.ramo}
+          {amendOn ? "Correggi ultimo commit" : "Commit su " + s.ramo}
         </button>
       </div>
     {/if}
   </div>
 
-  <Diff testo={diffTesto} />
+  <Diff testo={diffTesto} inStage={scelto?.inStage} onHunk={suHunk} />
 </div>

@@ -433,6 +433,23 @@ textarea {
   min-height: 70px;
   margin-bottom: 8px;
 }
+.commit-azioni {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.commit-azioni .amend {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--testo2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.commit-azioni .amend input {
+  width: auto;
+}
 
 /* ---- Vista Cronologia ---- */
 .cronologia {
@@ -473,6 +490,36 @@ textarea {
   color: var(--blu);
 }
 
+.commit-dettaglio {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.azioni-commit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--sfondo2);
+  border-bottom: 1px solid var(--bordo);
+}
+.azioni-commit .spazio {
+  flex: 1;
+}
+.azioni-commit .reset-label {
+  color: var(--testo2);
+  font-size: 12px;
+}
+.azioni-commit button {
+  padding: 3px 9px;
+  font-size: 12px;
+}
+.file-commit {
+  max-height: 30vh;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--bordo);
+}
+
 /* ---- Vista Diff ---- */
 .diff {
   overflow: auto;
@@ -505,6 +552,18 @@ textarea {
 }
 .diff .riga.info {
   color: var(--testo2);
+}
+.diff .hunk-barra {
+  display: flex;
+  gap: 6px;
+  padding: 4px 14px;
+  background: var(--sfondo2);
+  border-top: 1px solid var(--bordo);
+  border-bottom: 1px solid var(--bordo);
+}
+.diff .hunk-barra button {
+  padding: 1px 8px;
+  font-size: 11px;
 }
 .diff-vuoto,
 .lista-vuota {

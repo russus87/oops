@@ -23,11 +23,47 @@ export const scarta = (percorso, file) => invoke("scarta", { percorso, file });
 // ---- Commit ----
 export const creaCommit = (percorso, messaggio, nome = "", email = "") =>
   invoke("crea_commit", { percorso, messaggio, nome, email });
+export const amend = (percorso, messaggio) => invoke("amend", { percorso, messaggio });
+export const ultimoMessaggio = (percorso) => invoke("ultimo_messaggio", { percorso });
 
 // ---- Diff ----
 export const diffFile = (percorso, file, inStage) =>
   invoke("diff_file", { percorso, file, inStage });
 export const diffCommit = (percorso, id) => invoke("diff_commit", { percorso, id });
+export const listaFileCommit = (percorso, id) =>
+  invoke("lista_file_commit", { percorso, id });
+export const diffCommitFile = (percorso, id, file) =>
+  invoke("diff_commit_file", { percorso, id, file });
+
+// ---- Diff per hunk ----
+export const hunkStage = (percorso, file, indice, inStage) =>
+  invoke("hunk_stage", { percorso, file, indice, inStage });
+export const hunkScarta = (percorso, file, indice) =>
+  invoke("hunk_scarta", { percorso, file, indice });
+
+// ---- Stash ----
+export const stashLista = (percorso) => invoke("stash_lista", { percorso });
+export const stashSalva = (percorso, messaggio, includiNonTracciati) =>
+  invoke("stash_salva", { percorso, messaggio, includiNonTracciati });
+export const stashApplica = (percorso, indice) =>
+  invoke("stash_applica", { percorso, indice });
+export const stashPop = (percorso, indice) => invoke("stash_pop", { percorso, indice });
+export const stashElimina = (percorso, indice) =>
+  invoke("stash_elimina", { percorso, indice });
+
+// ---- Tag ----
+export const tagLista = (percorso) => invoke("tag_lista", { percorso });
+export const tagCrea = (percorso, nome, messaggio = "") =>
+  invoke("tag_crea", { percorso, nome, messaggio });
+export const tagElimina = (percorso, nome) => invoke("tag_elimina", { percorso, nome });
+
+// ---- Azioni su commit ----
+export const resetCommit = (percorso, id, modo) =>
+  invoke("reset_commit", { percorso, id, modo });
+export const cherryPick = (percorso, id) => invoke("cherry_pick", { percorso, id });
+export const configUtente = (percorso) => invoke("config_utente", { percorso });
+export const impostaConfigUtente = (percorso, nome, email) =>
+  invoke("imposta_config_utente", { percorso, nome, email });
 
 // ---- Rami ----
 export const ramiLista = (percorso) => invoke("rami_lista", { percorso });
