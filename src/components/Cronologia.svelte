@@ -1,15 +1,17 @@
 <script>
   // Vista "Cronologia": elenco commit a sinistra; a destra dettaglio del commit
   // (azioni + file toccati + diff del file scelto).
-  import { confirm } from "@tauri-apps/plugin-dialog";
+  import { confirm, save } from "@tauri-apps/plugin-dialog";
   import * as api from "../lib/api.js";
   import { stato } from "../lib/stato.svelte.js";
   import Diff from "./Diff.svelte";
+  import RebaseInterattivo from "./RebaseInterattivo.svelte";
 
   let mostraRamo = $state(false);
   let nomeRamo = $state("");
   let mostraCondensa = $state(false);
   let msgCondensa = $state("");
+  let rebaseInt = $state(null); // { base, commits } quando aperto
 
   let commit = $state([]);
   let scelto = $state(null); // id del commit selezionato
@@ -34,6 +36,48 @@
       if (c.length > 0 && !c.some((v) => v.id === scelto)) scelto = c[0].id;
     });
   });
+
+  // --- Grafo a corsie (best-effort, solo senza filtro) ---
+  const COLORI = ["#ff6b6b", "#5c7cfa", "#51cf66", "#ffd43b", "#cc5de8", "#22b8cf", "#ff922b"];
+
+  let grafo = $derived(filtro.trim() ? [] : calcolaGrafo(commit));
+  let maxCol = $derived(grafo.reduce((m, g) => Math.max(m, g.n), 1));
+
+  // Assegna a ogni commit una corsia (colonna) seguendo i genitori.
+  function calcolaGrafo(commits) {
+    const lanes = []; // id (breve) del prossimo commit atteso in ogni corsia
+    const out = [];
+    for (const c of commits) {
+      const sid = c.id_breve;
+      const cols = [];
+      lanes.forEach((l, i) => l === sid && cols.push(i));
+      let col;
+      if (cols.length) col = cols[0];
+      else {
+        col = lanes.indexOf(null);
+        if (col < 0) {
+          col = lanes.length;
+          lanes.push(null);
+        }
+      }
+      // Libera le corsie duplicate che convergono su questo commit.
+      for (let k = 1; k < cols.length; k++) lanes[cols[k]] = null;
+      const genitori = c.genitori || [];
+      lanes[col] = genitori.length ? genitori[0] : null;
+      for (let k = 1; k < genitori.length; k++) {
+        let free = lanes.indexOf(null);
+        if (free < 0) {
+          free = lanes.length;
+          lanes.push(null);
+        }
+        lanes[free] = genitori[k];
+      }
+      const attive = [];
+      lanes.forEach((l, i) => l !== null && attive.push(i));
+      out.push({ col, attive, n: lanes.length });
+    }
+    return out;
+  }
 
   // Filtro per messaggio, autore o hash.
   let commitFiltrati = $derived(
@@ -65,9 +109,10 @@
       diffTesto = "";
       return;
     }
+    stato.tic;
     const p = fileScelto
-      ? api.diffCommitFile(stato.percorso, scelto, fileScelto)
-      : api.diffCommit(stato.percorso, scelto);
+      ? api.diffCommitFile(stato.percorso, scelto, fileScelto, stato.ignoraSpazi)
+      : api.diffCommit(stato.percorso, scelto, stato.ignoraSpazi);
     p.then((t) => (diffTesto = t)).catch(() => (diffTesto = ""));
   });
 
@@ -142,6 +187,40 @@
     }
   }
 
+  async function copiaHash() {
+    try {
+      await navigator.clipboard.writeText(scelto);
+      stato.avvisa("Hash copiato");
+    } catch {
+      stato.avvisa("Copia non riuscita", "errore");
+    }
+  }
+
+  async function esportaPatch() {
+    const f = await save({
+      defaultPath: (datiScelto?.id_breve || "commit") + ".patch",
+      title: "Esporta patch",
+    });
+    if (!f) return;
+    try {
+      await api.patchEsporta(stato.percorso, scelto, f);
+      stato.avvisa("Patch esportata", "ok");
+    } catch (e) {
+      stato.avvisa(String(e), "errore");
+    }
+  }
+
+  function apriRebaseInt() {
+    const idx = commit.findIndex((c) => c.id === scelto);
+    // I commit "più nuovi" del selezionato, ordinati dal più vecchio al più recente.
+    const range = commit.slice(0, idx).reverse();
+    if (range.length === 0) {
+      stato.avvisa("Non ci sono commit dopo questo da riscrivere", "errore");
+      return;
+    }
+    rebaseInt = { base: scelto, commits: range };
+  }
+
   async function creaRamoDaQui() {
     if (!nomeRamo.trim()) return;
     try {
@@ -167,8 +246,18 @@
         {commit.length === 0 ? "Nessun commit ancora. Fanne uno! 🌱" : "Nessun commit corrisponde."}
       </div>
     {/if}
-    {#each commitFiltrati as c}
-      <div class="voce-commit" class:scelto={scelto === c.id} onclick={() => (scelto = c.id)}>
+    {#each commitFiltrati as c, i}
+      <div class="voce-commit" class:scelto={scelto === c.id} class:con-grafo={grafo.length > 0} onclick={() => (scelto = c.id)}>
+        {#if grafo[i]}
+          <svg class="grafo" width={maxCol * 12 + 6} height="46">
+            {#each grafo[i].attive as col}
+              <line x1={col * 12 + 6} y1="0" x2={col * 12 + 6} y2="46" stroke={COLORI[col % COLORI.length]} stroke-width="2" opacity="0.5" />
+            {/each}
+            <line x1={grafo[i].col * 12 + 6} y1="0" x2={grafo[i].col * 12 + 6} y2="46" stroke={COLORI[grafo[i].col % COLORI.length]} stroke-width="2" opacity="0.5" />
+            <circle cx={grafo[i].col * 12 + 6} cy="23" r="4" fill={COLORI[grafo[i].col % COLORI.length]} />
+          </svg>
+        {/if}
+        <div class="voce-corpo">
         <div class="titolo">
           {#each c.riferimenti as r}<span class="deco">{r}</span>{/each}{c.titolo}
         </div>
@@ -177,6 +266,7 @@
           {#if c.genitori.length > 1}<span class="merge">merge</span>{/if}
           <span>{c.autore}</span>
           <span>{c.data}</span>
+        </div>
         </div>
       </div>
     {/each}
@@ -199,6 +289,9 @@
         <button onclick={() => reset("soft")}>soft</button>
         <button onclick={() => reset("mixed")}>mixed</button>
         <button class="pericolo" onclick={() => reset("hard")}>hard</button>
+        <button onclick={apriRebaseInt} title="Riscrivi i commit dopo questo">↻ Rebase i.</button>
+        <button onclick={esportaPatch} title="Esporta come .patch">🗂</button>
+        <button onclick={copiaHash} title="Copia l'hash">⧉</button>
       </div>
 
       <div class="file-commit">
@@ -245,6 +338,14 @@
       </div>
     </div>
   </div>
+{/if}
+
+{#if rebaseInt}
+  <RebaseInterattivo
+    base={rebaseInt.base}
+    commits={rebaseInt.commits}
+    chiudi={() => (rebaseInt = null)}
+  />
 {/if}
 
 {#if mostraCondensa}

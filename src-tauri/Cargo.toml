@@ -1,6 +1,6 @@
 [package]
 name = "oops"
-version = "0.4.0"
+version = "0.5.0"
 description = "Oops - un'interfaccia grafica moderna per Git"
 authors = ["Antonio Russo"]
 license = "MIT"
@@ -28,3 +28,5 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 # La logica vera (Git) vive nel crate "core".
 oops-core = { path = "../core" }
+# Osserva i cambiamenti sul filesystem per aggiornare la UI da solo.
+notify = "6"

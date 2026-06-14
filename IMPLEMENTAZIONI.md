@@ -4,6 +4,38 @@ Interfaccia grafica moderna per Git. Rust + Tauri 2 + Svelte 5.
 Stessa impalcatura di Oxiterm (workspace Cargo `core` + `src-tauri`, CI verso repo
 privato `oops` + repo pubblico `oops-dist` con artefatti firmati).
 
+## v0.5.0 (2026-06-14) — Fase 5 (tutto il resto: punti 1-8)
+
+Implementati i punti 1-8 della roadmap residua (LFS e bisect esclusi: LFS richiede
+il binario esterno git-lfs, bisect non ha API in git2). Build: `cargo test -p oops-core`
+(11 verdi, +squash interattivo), `cargo build -p oops` OK, `npm run build` OK.
+
+### core/
+- `rebase_int.rs` — rebase interattivo "a mano" (pick/squash/reword/drop) replicando
+  i commit con `cherrypick_commit` + `write_tree_to`, poi sposta il ramo. + test.
+- `reflog.rs`, `submoduli.rs` (lista/aggiorna), `worktree.rs` (lista/aggiungi),
+  `patch.rs` (esporta diff commit / applica .patch con `Diff::from_buffer`).
+- `conflitti.rs` — `versioni` (base/nostra/loro/corrente dai 3 stage dell'indice) e
+  `salva` per l'editor a 3 vie.
+- `diff.rs` — opzione `ignora_spazi` (ignore_whitespace) su file/commit/commit_file.
+- `remote.rs` invariato da v0.4; `model.rs` — nuovi tipi (VoceReflog, Submodulo,
+  VoceWorktree, ConflittoVersioni, MossaRebase).
+
+### src-tauri/
+- Nuovi comandi per tutto quanto sopra. `Osservatore` (notify): comando
+  `avvia_osservatore` che osserva la cartella ed emette l'evento `oops-fs`. Dipendenza `notify`.
+
+### src/ (frontend)
+- `Diff.svelte` — evidenziazione per parola (prefisso/suffisso comuni) e toggle "ignora spazi".
+- `MergeEditor.svelte` — editor di merge a 3 vie (con "Usa" per copiare una versione).
+- `RebaseInterattivo.svelte` — editor del piano (azione + riordino ▲▼ + reword/squash).
+- `Cronologia.svelte` — grafo a corsie (SVG), ricerca, copia hash, esporta patch,
+  apri rebase interattivo sui commit dopo quello scelto.
+- `Impostazioni.svelte` — sezioni Patch (applica), Sottomoduli, Worktree, Reflog, Aggiornamenti.
+- `App.svelte` — auto-refresh (evento `oops-fs` con debounce + focus finestra), scorciatoie
+  (F5/Ctrl+R, Ctrl+1/2), notifiche desktop sulle operazioni di rete, "Apri cartella".
+- `stato.svelte.js` — `ignoraSpazi` persistito.
+
 ## v0.4.0 (2026-06-14) — Fase 4 (altra tranche corposa)
 
 Build verificata: `cargo test -p oops-core` (10 verdi), `cargo build -p oops` OK,

@@ -4,8 +4,10 @@
   // l'intera operazione (merge/cherry-pick/rebase).
   import * as api from "../lib/api.js";
   import { stato } from "../lib/stato.svelte.js";
+  import MergeEditor from "./MergeEditor.svelte";
 
   let { file = [] } = $props();
+  let editorFile = $state(null);
 
   async function risolvi(f, lato) {
     try {
@@ -43,8 +45,13 @@
       <div class="conflitto-ops">
         <button onclick={() => risolvi(f, "nostra")} title="Tieni la tua versione">Nostra</button>
         <button onclick={() => risolvi(f, "loro")} title="Tieni la versione in arrivo">Loro</button>
+        <button onclick={() => (editorFile = f)} title="Editor a 3 vie">Editor</button>
         <button class="primario" onclick={() => risolto(f)} title="Ho risolto a mano">Risolto</button>
       </div>
     </div>
   {/each}
 </div>
+
+{#if editorFile}
+  <MergeEditor file={editorFile} chiudi={() => (editorFile = null)} />
+{/if}

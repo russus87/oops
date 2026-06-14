@@ -38,13 +38,14 @@ export const ripristinaFile = (percorso, id, file) =>
   invoke("ripristina_file", { percorso, id, file });
 
 // ---- Diff ----
-export const diffFile = (percorso, file, inStage) =>
-  invoke("diff_file", { percorso, file, inStage });
-export const diffCommit = (percorso, id) => invoke("diff_commit", { percorso, id });
+export const diffFile = (percorso, file, inStage, ignoraSpazi = false) =>
+  invoke("diff_file", { percorso, file, inStage, ignoraSpazi });
+export const diffCommit = (percorso, id, ignoraSpazi = false) =>
+  invoke("diff_commit", { percorso, id, ignoraSpazi });
 export const listaFileCommit = (percorso, id) =>
   invoke("lista_file_commit", { percorso, id });
-export const diffCommitFile = (percorso, id, file) =>
-  invoke("diff_commit_file", { percorso, id, file });
+export const diffCommitFile = (percorso, id, file, ignoraSpazi = false) =>
+  invoke("diff_commit_file", { percorso, id, file, ignoraSpazi });
 
 // ---- Diff per hunk ----
 export const hunkStage = (percorso, file, indice, inStage) =>
@@ -101,6 +102,29 @@ export const conflittoRisolvi = (percorso, file, lato) =>
 export const conflittoSegnaRisolto = (percorso, file) =>
   invoke("conflitto_segna_risolto", { percorso, file });
 export const operazioneAnnulla = (percorso) => invoke("operazione_annulla", { percorso });
+export const conflittoVersioni = (percorso, file) =>
+  invoke("conflitto_versioni", { percorso, file });
+export const conflittoSalva = (percorso, file, contenuto) =>
+  invoke("conflitto_salva", { percorso, file, contenuto });
+
+// ---- Rebase interattivo ----
+export const rebaseInterattivo = (percorso, base, mosse) =>
+  invoke("rebase_interattivo", { percorso, base, mosse });
+
+// ---- Strumenti avanzati ----
+export const reflogLista = (percorso) => invoke("reflog_lista", { percorso });
+export const submoduliLista = (percorso) => invoke("submoduli_lista", { percorso });
+export const submoduloAggiorna = (percorso, nome) =>
+  invoke("submodulo_aggiorna", { percorso, nome });
+export const worktreeLista = (percorso) => invoke("worktree_lista", { percorso });
+export const worktreeAggiungi = (percorso, nome, cartella) =>
+  invoke("worktree_aggiungi", { percorso, nome, cartella });
+export const patchEsporta = (percorso, id, destinazione) =>
+  invoke("patch_esporta", { percorso, id, destinazione });
+export const patchApplica = (percorso, file) => invoke("patch_applica", { percorso, file });
+
+// ---- Auto-refresh ----
+export const avviaOsservatore = (percorso) => invoke("avvia_osservatore", { percorso });
 
 // ---- Remoti ----
 export const remotiLista = (percorso) => invoke("remoti_lista", { percorso });

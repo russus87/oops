@@ -4,6 +4,65 @@ use std::path::Path;
 
 use git2::{ResetType, Status, StatusOptions};
 
+use crate::model::ConflittoVersioni;
+
+/// Restituisce le tre versioni di un file in conflitto (base/nostra/loro) più il
+/// contenuto attuale della cartella (con i marcatori di conflitto), per l'editor
+/// di merge a 3 vie.
+pub fn versioni(percorso: &str, file: &str) -> Result<ConflittoVersioni, String> {
+    let repo = crate::apri(percorso)?;
+    let index = repo.index().map_err(|e| e.to_string())?;
+
+    let mut base = String::new();
+    let mut nostra = String::new();
+    let mut loro = String::new();
+
+    for c in index.conflicts().map_err(|e| e.to_string())? {
+        let c = c.map_err(|e| e.to_string())?;
+        let combacia = |v: &Option<git2::IndexEntry>| {
+            v.as_ref()
+                .map(|e| String::from_utf8_lossy(&e.path) == file)
+                .unwrap_or(false)
+        };
+        if combacia(&c.our) || combacia(&c.their) || combacia(&c.ancestor) {
+            base = contenuto_blob(&repo, &c.ancestor);
+            nostra = contenuto_blob(&repo, &c.our);
+            loro = contenuto_blob(&repo, &c.their);
+            break;
+        }
+    }
+
+    let corrente = repo
+        .workdir()
+        .map(|w| w.join(file))
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .unwrap_or_default();
+
+    Ok(ConflittoVersioni { base, nostra, loro, corrente })
+}
+
+/// Legge il contenuto testuale del blob puntato da una voce dell'indice.
+fn contenuto_blob(repo: &git2::Repository, voce: &Option<git2::IndexEntry>) -> String {
+    voce
+        .as_ref()
+        .and_then(|e| repo.find_blob(e.id).ok())
+        .map(|b| String::from_utf8_lossy(b.content()).to_string())
+        .unwrap_or_default()
+}
+
+/// Salva il contenuto risolto di un file e lo segna come risolto (in stage).
+pub fn salva(percorso: &str, file: &str, contenuto: &str) -> Result<(), String> {
+    let repo = crate::apri(percorso)?;
+    let assoluto = repo
+        .workdir()
+        .ok_or("repository senza cartella di lavoro")?
+        .join(file);
+    std::fs::write(&assoluto, contenuto).map_err(|e| e.to_string())?;
+    let mut index = repo.index().map_err(|e| e.to_string())?;
+    index.add_path(Path::new(file)).map_err(|e| e.to_string())?;
+    index.write().map_err(|e| e.to_string())
+}
+
 /// Elenca i file attualmente in conflitto.
 pub fn lista(percorso: &str) -> Result<Vec<String>, String> {
     let repo = crate::apri(percorso)?;

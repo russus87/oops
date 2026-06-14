@@ -5,19 +5,54 @@
 //! il repository ogni volta (è economico) e svolge l'operazione. L'unico stato
 //! che teniamo è il file dei "repository recenti".
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+use notify::{RecursiveMode, Watcher};
+use tauri::{AppHandle, Emitter};
 
 use oops_core::model::{
-    ConfigUtente, Credenziali, FileModificato, Ramo, Remoto, RepoRecente, StatoRepo, Tag,
-    VoceBlame, VoceLog, VoceStash,
+    ConfigUtente, ConflittoVersioni, Credenziali, FileModificato, MossaRebase, Ramo, Remoto,
+    RepoRecente, StatoRepo, Submodulo, Tag, VoceBlame, VoceLog, VoceReflog, VoceStash,
+    VoceWorktree,
 };
 use oops_core::{
-    azioni, blame, commit, conflitti, diff, rami, remote, repo, stage, stash, storage, tag,
+    azioni, blame, commit, conflitti, diff, patch, rami, rebase_int, reflog, remote, repo, stage,
+    stash, storage, submoduli, tag, worktree,
 };
 use tauri::{Manager, State};
 
 /// Percorso del file JSON con i repository recenti (in app_config_dir).
 struct FileRecenti(PathBuf);
+
+/// L'osservatore del filesystem del repository aperto (per l'auto-refresh).
+#[derive(Default)]
+struct Osservatore(Mutex<Option<notify::RecommendedWatcher>>);
+
+/// Avvia (o sostituisce) l'osservatore sulla cartella del repository: a ogni
+/// cambiamento emette l'evento `oops-fs`, che la UI usa per ricaricare.
+#[tauri::command]
+fn avvia_osservatore(
+    percorso: String,
+    app: AppHandle,
+    osservatore: State<Osservatore>,
+) -> Result<(), String> {
+    let app2 = app.clone();
+    let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        if res.is_ok() {
+            let _ = app2.emit("oops-fs", ());
+        }
+    })
+    .map_err(|e| e.to_string())?;
+
+    watcher
+        .watch(Path::new(&percorso), RecursiveMode::Recursive)
+        .map_err(|e| e.to_string())?;
+
+    // Sostituisce l'eventuale osservatore precedente (che si ferma).
+    *osservatore.0.lock().unwrap() = Some(watcher);
+    Ok(())
+}
 
 // ---- Apertura repository ----
 
@@ -136,13 +171,18 @@ fn ripristina_file(percorso: String, id: String, file: String) -> Result<(), Str
 // ---- Diff ----
 
 #[tauri::command]
-fn diff_file(percorso: String, file: String, in_stage: bool) -> Result<String, String> {
-    diff::file(&percorso, &file, in_stage)
+fn diff_file(
+    percorso: String,
+    file: String,
+    in_stage: bool,
+    ignora_spazi: bool,
+) -> Result<String, String> {
+    diff::file(&percorso, &file, in_stage, ignora_spazi)
 }
 
 #[tauri::command]
-fn diff_commit(percorso: String, id: String) -> Result<String, String> {
-    diff::commit(&percorso, &id)
+fn diff_commit(percorso: String, id: String, ignora_spazi: bool) -> Result<String, String> {
+    diff::commit(&percorso, &id, ignora_spazi)
 }
 
 #[tauri::command]
@@ -151,8 +191,13 @@ fn lista_file_commit(percorso: String, id: String) -> Result<Vec<FileModificato>
 }
 
 #[tauri::command]
-fn diff_commit_file(percorso: String, id: String, file: String) -> Result<String, String> {
-    diff::commit_file(&percorso, &id, &file)
+fn diff_commit_file(
+    percorso: String,
+    id: String,
+    file: String,
+    ignora_spazi: bool,
+) -> Result<String, String> {
+    diff::commit_file(&percorso, &id, &file, ignora_spazi)
 }
 
 // ---- Diff per hunk ----
@@ -318,6 +363,64 @@ fn operazione_annulla(percorso: String) -> Result<(), String> {
     conflitti::annulla(&percorso)
 }
 
+#[tauri::command]
+fn conflitto_versioni(percorso: String, file: String) -> Result<ConflittoVersioni, String> {
+    conflitti::versioni(&percorso, &file)
+}
+
+#[tauri::command]
+fn conflitto_salva(percorso: String, file: String, contenuto: String) -> Result<(), String> {
+    conflitti::salva(&percorso, &file, &contenuto)
+}
+
+// ---- Rebase interattivo ----
+
+#[tauri::command]
+fn rebase_interattivo(
+    percorso: String,
+    base: String,
+    mosse: Vec<MossaRebase>,
+) -> Result<String, String> {
+    rebase_int::esegui(&percorso, &base, mosse)
+}
+
+// ---- Strumenti avanzati: reflog, submoduli, worktree, patch ----
+
+#[tauri::command]
+fn reflog_lista(percorso: String) -> Result<Vec<VoceReflog>, String> {
+    reflog::lista(&percorso)
+}
+
+#[tauri::command]
+fn submoduli_lista(percorso: String) -> Result<Vec<Submodulo>, String> {
+    submoduli::lista(&percorso)
+}
+
+#[tauri::command]
+fn submodulo_aggiorna(percorso: String, nome: String) -> Result<(), String> {
+    submoduli::aggiorna(&percorso, &nome)
+}
+
+#[tauri::command]
+fn worktree_lista(percorso: String) -> Result<Vec<VoceWorktree>, String> {
+    worktree::lista(&percorso)
+}
+
+#[tauri::command]
+fn worktree_aggiungi(percorso: String, nome: String, cartella: String) -> Result<(), String> {
+    worktree::aggiungi(&percorso, &nome, &cartella)
+}
+
+#[tauri::command]
+fn patch_esporta(percorso: String, id: String, destinazione: String) -> Result<(), String> {
+    patch::esporta(&percorso, &id, &destinazione)
+}
+
+#[tauri::command]
+fn patch_applica(percorso: String, file: String) -> Result<(), String> {
+    patch::applica(&percorso, &file)
+}
+
 // ---- Remoti ----
 
 #[tauri::command]
@@ -417,6 +520,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .manage(Osservatore::default())
         .setup(|app| {
             // Il file dei recenti vive nella cartella di config dell'app.
             let dir = app.path().app_config_dir()?;
@@ -475,6 +579,16 @@ pub fn run() {
             conflitto_risolvi,
             conflitto_segna_risolto,
             operazione_annulla,
+            conflitto_versioni,
+            conflitto_salva,
+            rebase_interattivo,
+            reflog_lista,
+            submoduli_lista,
+            submodulo_aggiorna,
+            worktree_lista,
+            worktree_aggiungi,
+            patch_esporta,
+            patch_applica,
             remoti_lista,
             remoti_dettagli,
             remoto_aggiungi,
@@ -488,6 +602,7 @@ pub fn run() {
             recenti_lista,
             recenti_aggiungi,
             recenti_rimuovi,
+            avvia_osservatore,
         ])
         .run(tauri::generate_context!())
         .expect("errore durante l'avvio di Oops");

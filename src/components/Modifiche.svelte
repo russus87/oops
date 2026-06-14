@@ -46,7 +46,7 @@
     }
     stato.tic;
     api
-      .diffFile(stato.percorso, scelto.file, scelto.inStage)
+      .diffFile(stato.percorso, scelto.file, scelto.inStage, stato.ignoraSpazi)
       .then((t) => (diffTesto = t))
       .catch(() => (diffTesto = ""));
   });

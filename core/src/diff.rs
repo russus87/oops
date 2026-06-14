@@ -7,11 +7,12 @@ use crate::model::{FileModificato, StatoFile};
 
 /// Diff di un singolo file. Se `in_stage` è true mostra le modifiche già in
 /// staging (indice vs HEAD); altrimenti quelle nella cartella (cartella vs indice).
-pub fn file(percorso: &str, file: &str, in_stage: bool) -> Result<String, String> {
+pub fn file(percorso: &str, file: &str, in_stage: bool, ignora_spazi: bool) -> Result<String, String> {
     let repo = crate::apri(percorso)?;
 
     let mut opts = DiffOptions::new();
     opts.pathspec(file);
+    opts.ignore_whitespace(ignora_spazi);
     // Mostra anche i file nuovi per intero (altrimenti non si vedrebbero).
     opts.include_untracked(true).recurse_untracked_dirs(true);
 
@@ -31,7 +32,7 @@ pub fn file(percorso: &str, file: &str, in_stage: bool) -> Result<String, String
 }
 
 /// Diff di un intero commit rispetto al suo primo genitore (cosa ha cambiato).
-pub fn commit(percorso: &str, id: &str) -> Result<String, String> {
+pub fn commit(percorso: &str, id: &str, ignora_spazi: bool) -> Result<String, String> {
     let repo = crate::apri(percorso)?;
     let oid = git2::Oid::from_str(id).map_err(|e| e.to_string())?;
     let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
@@ -40,8 +41,10 @@ pub fn commit(percorso: &str, id: &str) -> Result<String, String> {
     // Albero del genitore (per il primo commit non c'è: confronto col vuoto).
     let albero_padre = commit.parent(0).ok().and_then(|p| p.tree().ok());
 
+    let mut opts = DiffOptions::new();
+    opts.ignore_whitespace(ignora_spazi);
     let diff = repo
-        .diff_tree_to_tree(albero_padre.as_ref(), Some(&albero), None)
+        .diff_tree_to_tree(albero_padre.as_ref(), Some(&albero), Some(&mut opts))
         .map_err(|e| e.to_string())?;
     in_testo(&diff)
 }
@@ -76,7 +79,7 @@ pub fn lista_file_commit(percorso: &str, id: &str) -> Result<Vec<FileModificato>
 }
 
 /// Diff di un singolo file dentro un commit (rispetto al primo genitore).
-pub fn commit_file(percorso: &str, id: &str, file: &str) -> Result<String, String> {
+pub fn commit_file(percorso: &str, id: &str, file: &str, ignora_spazi: bool) -> Result<String, String> {
     let repo = crate::apri(percorso)?;
     let oid = git2::Oid::from_str(id).map_err(|e| e.to_string())?;
     let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
@@ -85,6 +88,7 @@ pub fn commit_file(percorso: &str, id: &str, file: &str) -> Result<String, Strin
 
     let mut opts = DiffOptions::new();
     opts.pathspec(file);
+    opts.ignore_whitespace(ignora_spazi);
     let diff = repo
         .diff_tree_to_tree(albero_padre.as_ref(), Some(&albero), Some(&mut opts))
         .map_err(|e| e.to_string())?;
@@ -186,7 +190,7 @@ mod test {
 
         // Modifico il file e controllo che il diff contenga la nuova riga.
         fs::write(dir.path().join("a.txt"), "riga uno\nriga due\n").unwrap();
-        let d = file(p, "a.txt", false).unwrap();
+        let d = file(p, "a.txt", false, false).unwrap();
         assert!(d.contains("+riga due"));
     }
 }

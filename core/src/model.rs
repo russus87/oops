@@ -138,6 +138,52 @@ pub struct Remoto {
     pub url: String,
 }
 
+/// Una voce del reflog (la cronologia dei movimenti di HEAD).
+#[derive(Clone, Serialize, Deserialize)]
+pub struct VoceReflog {
+    pub id_breve: String,
+    pub messaggio: String,
+}
+
+/// Un sottomodulo (submodule) del repository.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Submodulo {
+    pub nome: String,
+    pub percorso: String,
+    pub url: String,
+}
+
+/// Un albero di lavoro (worktree) collegato al repository.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct VoceWorktree {
+    pub nome: String,
+    pub percorso: String,
+}
+
+/// Le tre versioni di un file in conflitto (per l'editor di merge a 3 vie).
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ConflittoVersioni {
+    /// Antenato comune (la base). Può mancare.
+    pub base: String,
+    /// La nostra versione.
+    pub nostra: String,
+    /// La versione in arrivo.
+    pub loro: String,
+    /// Il contenuto attuale nella cartella (con i marcatori <<<<<<< di Git).
+    pub corrente: String,
+}
+
+/// Una mossa del rebase interattivo: cosa fare di un commit.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct MossaRebase {
+    /// Hash del commit.
+    pub id: String,
+    /// Azione: "pick", "squash", "reword" o "drop".
+    pub azione: String,
+    /// Nuovo messaggio (per reword/squash).
+    pub messaggio: Option<String>,
+}
+
 /// Una riga del blame: chi e quando ha toccato l'ultima volta quella riga.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct VoceBlame {

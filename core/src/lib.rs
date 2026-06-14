@@ -21,13 +21,18 @@ pub mod commit;
 pub mod conflitti;
 pub mod diff;
 pub mod model;
+pub mod patch;
 pub mod rami;
+pub mod rebase_int;
+pub mod reflog;
 pub mod remote;
 pub mod repo;
 pub mod stage;
 pub mod stash;
 pub mod storage;
+pub mod submoduli;
 pub mod tag;
+pub mod worktree;
 
 use git2::Repository;
 use std::path::Path;

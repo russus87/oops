@@ -1,7 +1,20 @@
 // Versione dell'app e changelog, mostrati nel pannello Info.
-export const VERSIONE = "0.4.0";
+export const VERSIONE = "0.5.0";
 
 export const changelog = [
+  {
+    versione: "0.5.0",
+    note: [
+      "Rebase interattivo (pick / squash / reword / drop, con riordino)",
+      "Auto-aggiornamento della UI sui cambiamenti dei file + scorciatoie da tastiera",
+      "Diff con evidenziazione delle parole cambiate e opzione 'ignora spazi'",
+      "Editor di merge a 3 vie per i conflitti (nostra/base/loro + risultato)",
+      "Grafo a corsie dei rami nella cronologia",
+      "Reflog, sottomoduli, worktree e import/export di patch",
+      "Controlla aggiornamenti e notifiche desktop",
+      "Apri cartella, copia hash, ricerca rapida",
+    ],
+  },
   {
     versione: "0.4.0",
     note: [

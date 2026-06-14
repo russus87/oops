@@ -1,6 +1,13 @@
 <script>
   // Componente principale: decide tra schermata di avvio e area di lavoro,
   // e contiene la toolbar (Fetch/Pull/Push) e le schede Modifiche/Cronologia.
+  import { listen } from "@tauri-apps/api/event";
+  import { openPath } from "@tauri-apps/plugin-opener";
+  import {
+    isPermissionGranted,
+    requestPermission,
+    sendNotification,
+  } from "@tauri-apps/plugin-notification";
   import * as api from "./lib/api.js";
   import { stato } from "./lib/stato.svelte.js";
   import Avvio from "./components/Avvio.svelte";
@@ -25,6 +32,43 @@
     api.stato(stato.percorso).then((s) => (info = s)).catch(() => (info = null));
   });
 
+  // Quando si apre un repository, avvia l'osservatore del filesystem.
+  $effect(() => {
+    if (stato.percorso) api.avviaOsservatore(stato.percorso).catch(() => {});
+  });
+
+  // Ascolta una sola volta gli eventi del filesystem e ricarica (con debounce).
+  let timerFs;
+  $effect(() => {
+    const promessa = listen("oops-fs", () => {
+      clearTimeout(timerFs);
+      timerFs = setTimeout(() => stato.percorso && stato.ricarica(), 500);
+    });
+    return () => promessa.then((un) => un());
+  });
+
+  // Invia una notifica desktop (chiedendo il permesso la prima volta).
+  async function notifica(testo) {
+    try {
+      let ok = await isPermissionGranted();
+      if (!ok) ok = (await requestPermission()) === "granted";
+      if (ok) sendNotification({ title: "Oops", body: testo });
+    } catch {}
+  }
+
+  // Scorciatoie da tastiera globali.
+  function tasti(e) {
+    if (!stato.percorso) return;
+    if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && e.key === "r")) {
+      e.preventDefault();
+      stato.ricarica();
+    } else if ((e.ctrlKey || e.metaKey) && e.key === "1") {
+      vista = "modifiche";
+    } else if ((e.ctrlKey || e.metaKey) && e.key === "2") {
+      vista = "cronologia";
+    }
+  }
+
   // Riconosce gli errori di autenticazione, per chiedere le credenziali.
   const eAuth = (e) => /authenticat|401|403|credential|auth/i.test(String(e));
 
@@ -35,6 +79,7 @@
     try {
       const esito = await fn(null);
       stato.avvisa(nome + ": " + (esito || "fatto"), "ok");
+      notifica(nome + ": " + (esito || "completato"));
       stato.ricarica();
     } catch (e) {
       if (eAuth(e)) {
@@ -45,18 +90,23 @@
           try {
             const esito = await fn(cred);
             stato.avvisa(nome + ": " + (esito || "fatto"), "ok");
+            notifica(nome + ": " + (esito || "completato"));
             stato.ricarica();
           } catch (e2) {
             stato.avvisa(nome + " fallito: " + e2, "errore");
+            notifica(nome + " fallito");
           }
         }
       } else {
         stato.avvisa(nome + " fallito: " + e, "errore");
+        notifica(nome + " fallito");
       }
     } finally {
       stato.occupato = false;
     }
   }
+
+  const apriCartella = () => openPath(stato.percorso).catch(() => {});
 
   const fetch = () => azioneRete((c) => api.fetch(stato.percorso, "origin", c), "Fetch");
   const pull = (strategia = "ff") => {
@@ -67,6 +117,8 @@
   const pushForza = () => { menuPush = false; azioneRete((c) => api.push(stato.percorso, "origin", true, c), "Push forzato"); };
   const pushTags = () => { menuPush = false; azioneRete((c) => api.pushTags(stato.percorso, "origin", c), "Push tag"); };
 </script>
+
+<svelte:window onkeydown={tasti} onfocus={() => stato.percorso && stato.ricarica()} />
 
 {#if !stato.percorso}
   <Avvio />
@@ -84,6 +136,8 @@
         {/if}
         <span class="spazio"></span>
         <div class="sincro">
+          <button class="fantasma" title="Aggiorna (F5)" onclick={() => stato.ricarica()}>⟳</button>
+          <button class="fantasma" title="Apri la cartella" onclick={apriCartella}>📂</button>
           <button onclick={fetch} disabled={stato.occupato}>Fetch</button>
           <div class="menu-wrap">
             <button onclick={() => pull("ff")} disabled={stato.occupato}>Pull</button>

@@ -19,6 +19,15 @@ class Stato {
   // Tema dell'interfaccia ("scuro" o "chiaro"), ricordato tra le sessioni.
   tema = $state(localStorage.getItem("oops-tema") || "scuro");
 
+  // Se true, i diff ignorano le differenze di soli spazi.
+  ignoraSpazi = $state(localStorage.getItem("oops-ignora-spazi") === "1");
+
+  cambiaIgnoraSpazi() {
+    this.ignoraSpazi = !this.ignoraSpazi;
+    localStorage.setItem("oops-ignora-spazi", this.ignoraSpazi ? "1" : "0");
+    this.ricarica();
+  }
+
   // Applica il tema corrente al documento.
   applicaTema() {
     document.documentElement.dataset.tema = this.tema;

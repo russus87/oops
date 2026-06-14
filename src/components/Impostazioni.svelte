@@ -1,6 +1,8 @@
 <script>
   // Impostazioni: aspetto (tema), autore dei commit, gestione dei remoti e info.
-  import { confirm } from "@tauri-apps/plugin-dialog";
+  import { confirm, open } from "@tauri-apps/plugin-dialog";
+  import { check } from "@tauri-apps/plugin-updater";
+  import { relaunch } from "@tauri-apps/plugin-process";
   import * as api from "../lib/api.js";
   import { stato } from "../lib/stato.svelte.js";
   import { VERSIONE, changelog } from "../lib/versione.js";
@@ -12,6 +14,11 @@
   let remoti = $state([]);
   let nuovoNome = $state("");
   let nuovoUrl = $state("");
+  let reflog = $state([]);
+  let submoduli = $state([]);
+  let worktree = $state([]);
+  let wtNome = $state("");
+  let wtCartella = $state("");
 
   $effect(() => {
     api.configUtente(stato.percorso).then((c) => {
@@ -19,7 +26,65 @@
       cfgEmail = c.email;
     });
     ricaricaRemoti();
+    api.reflogLista(stato.percorso).then((r) => (reflog = r)).catch(() => {});
+    api.submoduliLista(stato.percorso).then((s) => (submoduli = s)).catch(() => {});
+    api.worktreeLista(stato.percorso).then((w) => (worktree = w)).catch(() => {});
   });
+
+  async function controllaAggiornamenti() {
+    try {
+      const update = await check();
+      if (!update) {
+        stato.avvisa("Sei già aggiornato", "ok");
+        return;
+      }
+      if (await confirm("Disponibile la versione " + update.version + ". Installare?")) {
+        await update.downloadAndInstall();
+        await relaunch();
+      }
+    } catch (e) {
+      stato.avvisa("Controllo aggiornamenti fallito: " + e, "errore");
+    }
+  }
+
+  async function aggiornaSub(nome) {
+    try {
+      await api.submoduloAggiorna(stato.percorso, nome);
+      stato.avvisa("Sottomodulo aggiornato", "ok");
+    } catch (e) {
+      stato.avvisa(String(e), "errore");
+    }
+  }
+
+  async function scegliCartellaWt() {
+    const d = await open({ directory: true, title: "Cartella del worktree" });
+    if (d) wtCartella = d;
+  }
+
+  async function aggiungiWorktree() {
+    if (!wtNome.trim() || !wtCartella.trim()) return;
+    try {
+      await api.worktreeAggiungi(stato.percorso, wtNome.trim(), wtCartella.trim());
+      wtNome = "";
+      wtCartella = "";
+      worktree = await api.worktreeLista(stato.percorso);
+      stato.avvisa("Worktree creato", "ok");
+    } catch (e) {
+      stato.avvisa(String(e), "errore");
+    }
+  }
+
+  async function applicaPatch() {
+    const f = await open({ title: "Scegli una patch da applicare" });
+    if (!f) return;
+    try {
+      await api.patchApplica(stato.percorso, f);
+      stato.avvisa("Patch applicata", "ok");
+      stato.ricarica();
+    } catch (e) {
+      stato.avvisa("Applicazione patch fallita: " + e, "errore");
+    }
+  }
 
   function ricaricaRemoti() {
     api.remotiDettagli(stato.percorso).then((r) => (remoti = r));
@@ -101,6 +166,55 @@
           <input bind:value={nuovoUrl} placeholder="URL" />
           <button class="primario" onclick={aggiungiRemoto}>Aggiungi</button>
         </div>
+      </section>
+
+      <section>
+        <h3>Patch</h3>
+        <button onclick={applicaPatch}>Applica una patch (.patch / .diff)…</button>
+      </section>
+
+      <section>
+        <h3>Sottomoduli</h3>
+        {#if submoduli.length === 0}
+          <p style="color:var(--testo2);font-size:12px">Nessun sottomodulo.</p>
+        {/if}
+        {#each submoduli as s}
+          <div class="remoto-riga">
+            <span class="r-nome">{s.nome}</span>
+            <span style="flex:1;color:var(--testo2);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{s.url}</span>
+            <button onclick={() => aggiornaSub(s.nome)}>Aggiorna</button>
+          </div>
+        {/each}
+      </section>
+
+      <section>
+        <h3>Worktree</h3>
+        {#each worktree as w}
+          <div class="remoto-riga">
+            <span class="r-nome">{w.nome}</span>
+            <span style="flex:1;color:var(--testo2);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{w.percorso}</span>
+          </div>
+        {/each}
+        <div class="remoto-riga nuovo">
+          <input bind:value={wtNome} placeholder="nome" />
+          <input bind:value={wtCartella} placeholder="cartella" />
+          <button onclick={scegliCartellaWt}>…</button>
+          <button class="primario" onclick={aggiungiWorktree}>Aggiungi</button>
+        </div>
+      </section>
+
+      <section>
+        <h3>Reflog (HEAD)</h3>
+        <div class="reflog">
+          {#each reflog as r}
+            <div class="reflog-riga"><span class="hash">{r.id_breve}</span> {r.messaggio}</div>
+          {/each}
+        </div>
+      </section>
+
+      <section>
+        <h3>Aggiornamenti</h3>
+        <button onclick={controllaAggiornamenti}>Controlla aggiornamenti</button>
       </section>
 
       <section>
