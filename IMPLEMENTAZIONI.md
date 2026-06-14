@@ -47,14 +47,16 @@ lanciata dal vivo (serve un display: provala con `cargo tauri dev`).
 
 ### CI / packaging
 - `.github/workflows/release.yml` — su tag `v*`: build 3 piattaforme (tauri-action),
-  job Arch (.pkg.tar.zst via makepkg), pubblicazione su `oops-dist`. Niente nasm
-  (non c'è russh); libgit2 vendored vuole cmake (+ libssl-dev/pkg-config su Linux).
+  job Arch (.pkg.tar.zst via makepkg). Il repo è **pubblico**, quindi la release (con
+  gli artefatti firmati per l'auto-update) viene pubblicata direttamente qui: niente
+  repo `oops-dist` né `DIST_TOKEN`. Niente nasm (non c'è russh); libgit2 vendored vuole
+  cmake (+ libssl-dev/pkg-config su Linux).
 - `packaging/PKGBUILD` + `oops.desktop`.
 
 ### Da fare prima del primo rilascio
 - Generare la coppia di chiavi di firma (`npm run tauri signer generate`) e
   mettere la **pubkey** in `tauri.conf.json` (ora c'è un segnaposto) + i segreti
-  `TAURI_SIGNING_PRIVATE_KEY(_PASSWORD)` e `DIST_TOKEN` su GitHub.
+  `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` su GitHub.
 - Sostituire le icone segnaposto (copiate da Oxiterm) con quelle di Oops.
 
 ### Idee per le prossime fasi

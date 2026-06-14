@@ -39,5 +39,6 @@ Serve **cmake** (per compilare libgit2 vendored) e, su Linux, `libssl-dev` + `pk
 ## Rilascio
 
 Push di un tag `vX.Y.Z` → la CI (`.github/workflows/release.yml`) costruisce i
-pacchetti per le tre piattaforme + `.pkg.tar.zst` per Arch, e pubblica gli
-artefatti firmati (auto-update) sul repo pubblico `oops-dist`.
+pacchetti per le tre piattaforme + `.pkg.tar.zst` per Arch e pubblica la release
+(con gli artefatti firmati per l'auto-update) direttamente su questo repo, che è
+pubblico (Actions illimitate, niente repo `-dist` separato).

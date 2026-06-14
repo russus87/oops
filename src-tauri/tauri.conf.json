@@ -40,7 +40,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/russus87/oops-dist/releases/latest/download/latest.json"
+        "https://github.com/russus87/oops/releases/latest/download/latest.json"
       ],
       "pubkey": "SOSTITUIRE_CON_CHIAVE_PUBBLICA_MINISIGN"
     }
