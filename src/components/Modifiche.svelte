@@ -7,6 +7,12 @@
   import Diff from "./Diff.svelte";
   import Conflitti from "./Conflitti.svelte";
   import Blame from "./Blame.svelte";
+  import BarraStat from "./BarraStat.svelte";
+  import { coloreLingua, estensione } from "../lib/util.js";
+
+  let statNon = $state({}); // percorso -> stat (fuori stage)
+  let statStage = $state({}); // percorso -> stat (in stage)
+  const mappa = (arr) => Object.fromEntries(arr.map((x) => [x.percorso, x]));
 
   let s = $state(null); // StatoRepo dal backend
   let conflitti = $state([]); // file in conflitto
@@ -36,6 +42,8 @@
       aggiornaSelezione(nuovo);
     });
     api.conflittiLista(stato.percorso).then((c) => (conflitti = c)).catch(() => (conflitti = []));
+    api.statLavoro(stato.percorso, false).then((v) => (statNon = mappa(v))).catch(() => (statNon = {}));
+    api.statLavoro(stato.percorso, true).then((v) => (statStage = mappa(v))).catch(() => (statStage = {}));
   });
 
   // Carica il diff del file selezionato.
@@ -109,6 +117,25 @@
     }
   }
 
+  let generando = $state(false);
+  // Genera il messaggio di commit con l'AI (Anthropic) dal diff in stage.
+  async function generaAi() {
+    if (!stato.aiToken) {
+      stato.avvisa("Imposta il token AI nelle Impostazioni (⚙)", "errore");
+      return;
+    }
+    generando = true;
+    try {
+      const msg = await api.generaCommitAi(stato.percorso, stato.aiToken, stato.aiModello);
+      messaggio = msg;
+      stato.avvisa("Messaggio generato ✨", "ok");
+    } catch (e) {
+      stato.avvisa("AI: " + e, "errore");
+    } finally {
+      generando = false;
+    }
+  }
+
   // Attiva/disattiva amend: quando si attiva, precompila col vecchio messaggio.
   async function toggleAmend() {
     amendOn = !amendOn;
@@ -140,6 +167,17 @@
     await api.pulisciNonTracciati(stato.percorso);
     stato.avvisa("File non tracciati eliminati");
     stato.ricarica();
+  }
+
+  // Mette in stage solo le righe selezionate (patch parziale dal pannello Diff).
+  async function suRighe(patch) {
+    try {
+      await api.stageRighe(stato.percorso, patch, false);
+      stato.avvisa("Righe messe in stage", "ok");
+      stato.ricarica();
+    } catch (e) {
+      stato.avvisa("Stage delle righe fallito: " + e, "errore");
+    }
   }
 
   // Azione su un singolo hunk dal pannello Diff.
@@ -183,7 +221,9 @@
               onclick={() => seleziona(f.percorso, false)}
             >
               <span class="stato {f.stato}">{simbolo[f.stato]}</span>
+              <span class="lang-dot" style="background:{coloreLingua(f.percorso)}" title={estensione(f.percorso) || "file"}></span>
               <span class="nome">{f.percorso}</span>
+              <BarraStat stat={statNon[f.percorso]} />
               <span class="ops">
                 <button title="Blame / cronologia" onclick={(e) => { e.stopPropagation(); blameFile = f.percorso; }}>📜</button>
                 <button title="Scarta" class="pericolo" onclick={(e) => scarta(f.percorso, e)}>↩</button>
@@ -210,7 +250,9 @@
               onclick={() => seleziona(f.percorso, true)}
             >
               <span class="stato {f.stato}">{simbolo[f.stato]}</span>
+              <span class="lang-dot" style="background:{coloreLingua(f.percorso)}" title={estensione(f.percorso) || "file"}></span>
               <span class="nome">{f.percorso}</span>
+              <BarraStat stat={statStage[f.percorso]} />
               <span class="ops">
                 <button title="Togli dallo stage" onclick={(e) => rimuovi(f.percorso, e)}>−</button>
               </span>
@@ -230,7 +272,13 @@
             <input type="checkbox" checked={amendOn} onchange={toggleAmend} />
             Amend
           </label>
-          <button class="fantasma" onclick={stash} title="Metti da parte le modifiche">📦 Stash</button>
+          <span style="display:flex;gap:6px">
+            <button class="fantasma" onclick={generaAi} disabled={generando || s.in_stage.length === 0}
+              title="Genera il messaggio dal diff in stage (AI)">
+              {generando ? "…" : "✨ Genera"}
+            </button>
+            <button class="fantasma" onclick={stash} title="Metti da parte le modifiche">📦 Stash</button>
+          </span>
         </div>
         <button
           class="primario"
@@ -244,7 +292,13 @@
     {/if}
   </div>
 
-  <Diff testo={diffTesto} inStage={scelto?.inStage} onHunk={suHunk} />
+  <Diff
+    testo={diffTesto}
+    inStage={scelto?.inStage}
+    onHunk={suHunk}
+    onRighe={scelto && !scelto.inStage ? suRighe : null}
+    percorsoFile={scelto?.file}
+  />
 </div>
 
 {#if blameFile}

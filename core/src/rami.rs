@@ -16,7 +16,8 @@ pub fn lista(percorso: &str) -> Result<Vec<Ramo>, String> {
     Ok(rami)
 }
 
-/// Aggiunge alla lista i rami di un certo tipo (locale o remoto).
+/// Aggiunge alla lista i rami di un certo tipo (locale o remoto), con
+/// avanti/indietro rispetto all'upstream e i dati dell'ultimo commit.
 fn aggiungi_rami(
     repo: &Repository,
     tipo: BranchType,
@@ -27,13 +28,43 @@ fn aggiungi_rami(
     let rami = repo.branches(Some(tipo)).map_err(|e| e.to_string())?;
     for r in rami {
         let (ramo, _) = r.map_err(|e| e.to_string())?;
-        if let Some(nome) = ramo.name().map_err(|e| e.to_string())? {
-            fuori.push(Ramo {
-                nome: nome.to_string(),
-                corrente: !remoto && nome == corrente,
-                remoto,
-            });
-        }
+        let nome = match ramo.name().map_err(|e| e.to_string())? {
+            Some(n) => n.to_string(),
+            None => continue,
+        };
+
+        // Ultimo commit del ramo (titolo + data).
+        let (ultimo_titolo, ultimo_quando) = match ramo.get().peel_to_commit() {
+            Ok(c) => (
+                c.summary().unwrap_or("").to_string(),
+                c.time().seconds(),
+            ),
+            Err(_) => (String::new(), 0),
+        };
+
+        // Avanti/indietro solo per i rami locali con un upstream configurato.
+        let (avanti, indietro) = if !remoto {
+            ramo.upstream()
+                .ok()
+                .and_then(|u| {
+                    let a = ramo.get().target()?;
+                    let b = u.get().target()?;
+                    repo.graph_ahead_behind(a, b).ok()
+                })
+                .unwrap_or((0, 0))
+        } else {
+            (0, 0)
+        };
+
+        fuori.push(Ramo {
+            corrente: !remoto && nome == corrente,
+            remoto,
+            avanti,
+            indietro,
+            ultimo_titolo,
+            ultimo_quando,
+            nome,
+        });
     }
     Ok(())
 }
@@ -158,6 +189,20 @@ pub fn merge(percorso: &str, nome: &str) -> Result<String, String> {
 
     repo.cleanup_state().map_err(|e| e.to_string())?;
     Ok("merge completato".into())
+}
+
+/// Unisce il ramo `sorgente` DENTRO il ramo `destinazione` (drag&drop di un ramo
+/// sopra un altro): passa a `destinazione` e poi fa il merge di `sorgente`.
+pub fn merge_rami(percorso: &str, sorgente: &str, destinazione: &str) -> Result<String, String> {
+    checkout(percorso, destinazione)?;
+    merge(percorso, sorgente)
+}
+
+/// Riposiziona (rebase) il ramo `sorgente` sopra `destinazione`: passa a
+/// `sorgente` e poi fa il rebase su `destinazione`.
+pub fn rebase_rami(percorso: &str, sorgente: &str, destinazione: &str) -> Result<String, String> {
+    checkout(percorso, sorgente)?;
+    rebase(percorso, destinazione)
 }
 
 /// Crea un nuovo ramo a partire da un commit specifico.

@@ -1,9 +1,11 @@
 //! Differenze (diff) di un file o di un commit, restituite come testo unificato
 //! (lo stesso formato di `git diff`), che il frontend colora.
 
+use std::collections::HashMap;
+
 use git2::{ApplyLocation, ApplyOptions, Delta, Diff, DiffFormat, DiffOptions};
 
-use crate::model::{FileModificato, StatoFile};
+use crate::model::{FileModificato, StatFile, StatoFile};
 
 /// Diff di un singolo file. Se `in_stage` è true mostra le modifiche già in
 /// staging (indice vs HEAD); altrimenti quelle nella cartella (cartella vs indice).
@@ -40,6 +42,30 @@ pub fn commit(percorso: &str, id: &str, ignora_spazi: bool) -> Result<String, St
 
     // Albero del genitore (per il primo commit non c'è: confronto col vuoto).
     let albero_padre = commit.parent(0).ok().and_then(|p| p.tree().ok());
+
+    let mut opts = DiffOptions::new();
+    opts.ignore_whitespace(ignora_spazi);
+    let diff = repo
+        .diff_tree_to_tree(albero_padre.as_ref(), Some(&albero), Some(&mut opts))
+        .map_err(|e| e.to_string())?;
+    in_testo(&diff)
+}
+
+/// Diff di un commit rispetto a UN suo genitore specifico (`genitore`: 0 = il
+/// primo, 1 = il secondo…). Per i commit di merge permette di vedere che cosa
+/// ha portato ciascun ramo. Se il genitore indicato non esiste, confronta con
+/// l'albero vuoto (come per il primo commit della storia).
+pub fn commit_vs_genitore(
+    percorso: &str,
+    id: &str,
+    genitore: usize,
+    ignora_spazi: bool,
+) -> Result<String, String> {
+    let repo = crate::apri(percorso)?;
+    let oid = git2::Oid::from_str(id).map_err(|e| e.to_string())?;
+    let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+    let albero = commit.tree().map_err(|e| e.to_string())?;
+    let albero_padre = commit.parent(genitore).ok().and_then(|p| p.tree().ok());
 
     let mut opts = DiffOptions::new();
     opts.ignore_whitespace(ignora_spazi);
@@ -93,6 +119,177 @@ pub fn commit_file(percorso: &str, id: &str, file: &str, ignora_spazi: bool) -> 
         .diff_tree_to_tree(albero_padre.as_ref(), Some(&albero), Some(&mut opts))
         .map_err(|e| e.to_string())?;
     in_testo(&diff)
+}
+
+/// Conta le righe aggiunte/rimosse (e se è binario) per ogni file di un Diff.
+fn stat_di(diff: &Diff) -> Result<Vec<StatFile>, String> {
+    let mut mappa: HashMap<String, StatFile> = HashMap::new();
+    let mut ordine: Vec<String> = Vec::new();
+
+    // Binari: marcati dai flag del delta.
+    for d in diff.deltas() {
+        if let Some(p) = d
+            .new_file()
+            .path()
+            .or_else(|| d.old_file().path())
+            .map(|p| p.to_string_lossy().to_string())
+        {
+            if !mappa.contains_key(&p) {
+                ordine.push(p.clone());
+                mappa.insert(
+                    p.clone(),
+                    StatFile { percorso: p.clone(), aggiunte: 0, rimozioni: 0, binario: false, dimensione: 0 },
+                );
+            }
+            if d.flags().is_binary() {
+                mappa.get_mut(&p).unwrap().binario = true;
+            }
+        }
+    }
+
+    // Righe +/- dalle linee del patch.
+    diff.print(DiffFormat::Patch, |delta, _hunk, line| {
+        if let Some(p) = delta
+            .new_file()
+            .path()
+            .or_else(|| delta.old_file().path())
+            .map(|p| p.to_string_lossy().to_string())
+        {
+            if let Some(s) = mappa.get_mut(&p) {
+                match line.origin() {
+                    '+' => s.aggiunte += 1,
+                    '-' => s.rimozioni += 1,
+                    _ => {}
+                }
+            }
+        }
+        true
+    })
+    .map_err(|e| e.to_string())?;
+
+    Ok(ordine.into_iter().filter_map(|p| mappa.remove(&p)).collect())
+}
+
+/// Statistiche +/- dei file nella working copy: se `in_stage` conta le modifiche
+/// già in stage (HEAD↔indice), altrimenti quelle nella cartella (indice↔cartella).
+pub fn stat_lavoro(percorso: &str, in_stage: bool) -> Result<Vec<StatFile>, String> {
+    let repo = crate::apri(percorso)?;
+    let mut opts = DiffOptions::new();
+    opts.include_untracked(true).recurse_untracked_dirs(true);
+    let diff = if in_stage {
+        let albero = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
+        repo.diff_tree_to_index(albero.as_ref(), None, Some(&mut opts))
+            .map_err(|e| e.to_string())?
+    } else {
+        repo.diff_index_to_workdir(None, Some(&mut opts))
+            .map_err(|e| e.to_string())?
+    };
+    let mut stat = stat_di(&diff)?;
+    // Dimensione = file nella cartella di lavoro (0 se non c'è più).
+    if let Some(radice) = repo.workdir() {
+        for s in &mut stat {
+            s.dimensione = std::fs::metadata(radice.join(&s.percorso))
+                .map(|m| m.len())
+                .unwrap_or(0);
+        }
+    }
+    Ok(stat)
+}
+
+/// Statistiche +/- dei file toccati da un commit (rispetto al primo genitore).
+pub fn stat_commit(percorso: &str, id: &str) -> Result<Vec<StatFile>, String> {
+    let repo = crate::apri(percorso)?;
+    let oid = git2::Oid::from_str(id).map_err(|e| e.to_string())?;
+    let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+    let albero = commit.tree().map_err(|e| e.to_string())?;
+    let albero_padre = commit.parent(0).ok().and_then(|p| p.tree().ok());
+    let diff = repo
+        .diff_tree_to_tree(albero_padre.as_ref(), Some(&albero), None)
+        .map_err(|e| e.to_string())?;
+    let mut stat = stat_di(&diff)?;
+    // Dimensione = blob del file nell'albero del commit (0 se cancellato).
+    for s in &mut stat {
+        s.dimensione = albero
+            .get_path(std::path::Path::new(&s.percorso))
+            .ok()
+            .and_then(|e| repo.find_blob(e.id()).ok())
+            .map(|b| b.size() as u64)
+            .unwrap_or(0);
+    }
+    Ok(stat)
+}
+
+/// Diff fra due commit qualsiasi (per "Compare with…"): mostra cosa cambia
+/// passando da `a` a `b`.
+pub fn tra_commit(percorso: &str, a: &str, b: &str, ignora_spazi: bool) -> Result<String, String> {
+    let repo = crate::apri(percorso)?;
+    let ta = repo
+        .find_commit(git2::Oid::from_str(a).map_err(|e| e.to_string())?)
+        .and_then(|c| c.tree())
+        .map_err(|e| e.to_string())?;
+    let tb = repo
+        .find_commit(git2::Oid::from_str(b).map_err(|e| e.to_string())?)
+        .and_then(|c| c.tree())
+        .map_err(|e| e.to_string())?;
+    let mut opts = DiffOptions::new();
+    opts.ignore_whitespace(ignora_spazi);
+    let diff = repo
+        .diff_tree_to_tree(Some(&ta), Some(&tb), Some(&mut opts))
+        .map_err(|e| e.to_string())?;
+    in_testo(&diff)
+}
+
+/// Diff completo di ciò che è in stage (HEAD → indice): serve all'AI per
+/// generare il messaggio di commit.
+pub fn staged_tutto(percorso: &str) -> Result<String, String> {
+    let repo = crate::apri(percorso)?;
+    let albero = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
+    let diff = repo
+        .diff_tree_to_index(albero.as_ref(), None, None)
+        .map_err(|e| e.to_string())?;
+    in_testo(&diff)
+}
+
+/// Applica una patch (testo unificato) direttamente all'INDICE (staging):
+/// è il motore dello stage/unstage per singola riga. Se `reverse` è true la
+/// patch viene applicata al contrario (per togliere righe dallo stage).
+pub fn applica_indice(percorso: &str, patch: &str, reverse: bool) -> Result<(), String> {
+    let repo = crate::apri(percorso)?;
+    let diff = Diff::from_buffer(patch.as_bytes()).map_err(|e| e.to_string())?;
+    let mut opts = ApplyOptions::new();
+    // git2 non ha un flag "reverse" su apply: se serve, la patch va già invertita
+    // dal chiamante. Qui `reverse` è tenuto per chiarezza dell'API.
+    let _ = reverse;
+    repo.apply(&diff, ApplyLocation::Index, Some(&mut opts))
+        .map_err(|e| e.to_string())
+}
+
+/// Churn (righe cambiate = aggiunte + rimozioni) per gli ultimi `limite` commit,
+/// per la "heat map" del grafo. Calcolo best-effort (un diff per commit).
+pub fn calore(percorso: &str, limite: usize) -> Result<Vec<crate::model::Calore>, String> {
+    let repo = crate::apri(percorso)?;
+    if repo.head().is_err() {
+        return Ok(Vec::new());
+    }
+    let mut walk = repo.revwalk().map_err(|e| e.to_string())?;
+    walk.push_head().map_err(|e| e.to_string())?;
+    walk.set_sorting(git2::Sort::TIME).map_err(|e| e.to_string())?;
+
+    let mut out = Vec::new();
+    for oid in walk.take(limite) {
+        let oid = oid.map_err(|e| e.to_string())?;
+        let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+        let albero = commit.tree().map_err(|e| e.to_string())?;
+        let padre = commit.parent(0).ok().and_then(|p| p.tree().ok());
+        let churn = repo
+            .diff_tree_to_tree(padre.as_ref(), Some(&albero), None)
+            .ok()
+            .and_then(|d| d.stats().ok())
+            .map(|s| s.insertions() + s.deletions())
+            .unwrap_or(0);
+        out.push(crate::model::Calore { id: oid.to_string(), churn });
+    }
+    Ok(out)
 }
 
 /// Mette in stage (o toglie dallo stage, se `in_stage`) UN SOLO hunk di un file.

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use git2::{Repository, Signature, Sort};
 
-use crate::model::VoceLog;
+use crate::model::{Riferimento, VoceLog};
 
 /// Legge la cronologia dei commit a partire da HEAD (i più recenti prima).
 /// `limite` = quanti commit al massimo restituire.
@@ -58,6 +58,37 @@ pub fn log_file(percorso: &str, file: &str, limite: usize) -> Result<Vec<VoceLog
     Ok(voci)
 }
 
+/// Commit raggiungibili da `a` ma non da `da` (cioè l'intervallo `da..a`), dal
+/// più recente al più vecchio. Se `da` è vuoto restituisce la storia fino ad `a`.
+/// Utile per le "release notes" fra due tag. `a`/`da` sono nomi di ref o hash.
+pub fn tra(percorso: &str, da: &str, a: &str, limite: usize) -> Result<Vec<VoceLog>, String> {
+    let repo = crate::apri(percorso)?;
+    let decorazioni = mappa_riferimenti(&repo);
+
+    let oid_a = repo
+        .revparse_single(a)
+        .and_then(|o| o.peel_to_commit())
+        .map_err(|e| e.to_string())?
+        .id();
+
+    let mut walk = repo.revwalk().map_err(|e| e.to_string())?;
+    walk.push(oid_a).map_err(|e| e.to_string())?;
+    if !da.trim().is_empty() {
+        if let Ok(c) = repo.revparse_single(da).and_then(|o| o.peel_to_commit()) {
+            let _ = walk.hide(c.id());
+        }
+    }
+    walk.set_sorting(Sort::TIME).map_err(|e| e.to_string())?;
+
+    let mut voci = Vec::new();
+    for oid in walk.take(limite) {
+        let oid = oid.map_err(|e| e.to_string())?;
+        let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+        voci.push(in_voce(&commit, &decorazioni));
+    }
+    Ok(voci)
+}
+
 /// Vero se il commit ha modificato `file` rispetto al primo genitore.
 fn tocca_file(repo: &Repository, commit: &git2::Commit, file: &std::path::Path) -> bool {
     let albero = match commit.tree() {
@@ -73,21 +104,50 @@ fn tocca_file(repo: &Repository, commit: &git2::Commit, file: &std::path::Path) 
     }
 }
 
-/// Costruisce una mappa "id commit -> nomi dei rami/tag che lo puntano".
-fn mappa_riferimenti(repo: &Repository) -> HashMap<String, Vec<String>> {
-    let mut mappa: HashMap<String, Vec<String>> = HashMap::new();
+/// Costruisce una mappa "id commit -> riferimenti (rami/tag/HEAD) che lo puntano",
+/// ciascuno con il proprio tipo così il frontend può colorarlo e dargli un'icona.
+fn mappa_riferimenti(repo: &Repository) -> HashMap<String, Vec<Riferimento>> {
+    let mut mappa: HashMap<String, Vec<Riferimento>> = HashMap::new();
+
+    // HEAD: segna il commit corrente con un badge "testa" (es. "HEAD → main").
+    // Se HEAD è staccata mostriamo comunque "HEAD" sul commit puntato.
+    if let Ok(head) = repo.head() {
+        if let Ok(commit) = head.peel_to_commit() {
+            let nome = if head.is_branch() {
+                head.shorthand().unwrap_or("HEAD").to_string()
+            } else {
+                "HEAD".to_string()
+            };
+            mappa
+                .entry(commit.id().to_string())
+                .or_default()
+                .push(Riferimento { nome, tipo: "testa".into() });
+        }
+    }
+
     if let Ok(riferimenti) = repo.references() {
         for r in riferimenti.flatten() {
             // Risolviamo fino al commit (le tag annotate puntano a un oggetto tag).
             if let Ok(commit) = r.peel_to_commit() {
-                let nome = r
-                    .shorthand()
-                    .map(|s| s.to_string())
-                    .unwrap_or_default();
+                let nome = r.shorthand().map(|s| s.to_string()).unwrap_or_default();
                 if nome.is_empty() || nome == "HEAD" {
                     continue;
                 }
-                mappa.entry(commit.id().to_string()).or_default().push(nome);
+                let tipo = if r.is_tag() {
+                    "tag"
+                } else if r.is_remote() {
+                    "remoto"
+                } else {
+                    "locale"
+                };
+                let voci = mappa.entry(commit.id().to_string()).or_default();
+                // Evita di ripetere il ramo già segnato come "testa" (HEAD → ramo).
+                let gia_testa = voci
+                    .iter()
+                    .any(|v| v.tipo == "testa" && v.nome == nome);
+                if !gia_testa {
+                    voci.push(Riferimento { nome, tipo: tipo.into() });
+                }
             }
         }
     }
@@ -95,21 +155,30 @@ fn mappa_riferimenti(repo: &Repository) -> HashMap<String, Vec<String>> {
 }
 
 /// Trasforma un commit di git2 nella nostra VoceLog (con data leggibile).
-fn in_voce(commit: &git2::Commit, decorazioni: &HashMap<String, Vec<String>>) -> VoceLog {
+fn in_voce(commit: &git2::Commit, decorazioni: &HashMap<String, Vec<Riferimento>>) -> VoceLog {
     let autore = commit.author();
     let id = commit.id().to_string();
-    let riferimenti = decorazioni.get(&id).cloned().unwrap_or_default();
+    let mut decori = decorazioni.get(&id).cloned().unwrap_or_default();
+    // Ordina i badge: prima HEAD, poi rami locali, poi remoti, infine tag.
+    decori.sort_by_key(|r| match r.tipo.as_str() {
+        "testa" => 0,
+        "locale" => 1,
+        "remoto" => 2,
+        _ => 3,
+    });
+    let secondi = commit.time().seconds();
     VoceLog {
         id_breve: id.chars().take(7).collect(),
         titolo: commit.summary().unwrap_or("(senza messaggio)").to_string(),
         autore: autore.name().unwrap_or("?").to_string(),
         email: autore.email().unwrap_or("").to_string(),
-        data: data_leggibile(commit.time().seconds()),
+        data: data_leggibile(secondi),
+        timestamp: secondi,
         genitori: commit
             .parent_ids()
             .map(|p| p.to_string().chars().take(7).collect())
             .collect(),
-        riferimenti,
+        decori,
         id,
     }
 }

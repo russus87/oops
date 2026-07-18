@@ -1,11 +1,18 @@
 <script>
-  // Vista "Cronologia": elenco commit a sinistra; a destra dettaglio del commit
-  // (azioni + file toccati + diff del file scelto).
+  // Vista "Cronologia": a sinistra il grafo dei commit (corsie colorate con
+  // curve, avatar, badge dei riferimenti, tempo relativo); a destra il dettaglio
+  // del commit (azioni + file toccati + diff). I commit si possono trascinare
+  // su un ramo nella barra laterale per fare cherry-pick (drag&drop).
   import { confirm, save } from "@tauri-apps/plugin-dialog";
+  import { fly } from "svelte/transition";
   import * as api from "../lib/api.js";
   import { stato } from "../lib/stato.svelte.js";
+  import { calcolaGrafo, iniziali, coloreAvatar, tempoRelativo, coloreLingua, estensione } from "../lib/util.js";
   import Diff from "./Diff.svelte";
   import RebaseInterattivo from "./RebaseInterattivo.svelte";
+  import BarraStat from "./BarraStat.svelte";
+
+  let statFile = $state({}); // percorso -> stat del commit selezionato
 
   let mostraRamo = $state(false);
   let nomeRamo = $state("");
@@ -20,11 +27,15 @@
   let diffTesto = $state("");
   let filtro = $state(""); // testo di ricerca nella cronologia
   let limite = $state(100); // quanti commit caricare
+  let genitoreDiff = $state(0); // per i merge: con quale genitore confrontare
 
   const simbolo = {
     nuovo: "A", modificato: "M", cancellato: "D",
     rinominato: "R", tipocambiato: "T", conflitto: "!",
   };
+
+  // Icona per tipo di riferimento (badge nel grafo).
+  const iconaRef = { testa: "◆", locale: "⎇", remoto: "☁", tag: "🏷" };
 
   // Carica la cronologia (ricaricata anche quando cambia il limite).
   $effect(() => {
@@ -37,84 +48,155 @@
     });
   });
 
-  // --- Grafo a corsie (best-effort, solo senza filtro) ---
-  const COLORI = ["#ff6b6b", "#5c7cfa", "#51cf66", "#ffd43b", "#cc5de8", "#22b8cf", "#ff922b"];
+  // --- Grafo a corsie con curve (best-effort, solo senza filtro) ---
+  let zoom = $state(1);            // livello di zoom della cronologia
+  let ROW = $derived(48 * zoom);  // altezza di una riga (px)
+  const COLW = 15;  // larghezza di una corsia (px)
+  const PAD = 12;   // margine sinistro (px)
 
-  let grafo = $derived(filtro.trim() ? [] : calcolaGrafo(commit));
-  let maxCol = $derived(grafo.reduce((m, g) => Math.max(m, g.n), 1));
+  let filtroAutore = $state("");   // filtro per autore ("" = tutti)
+  let soloMerge = $state(false);   // mostra solo i commit di merge
+  let autori = $derived([...new Set(commit.map((c) => c.autore))].sort());
 
-  // Assegna a ogni commit una corsia (colonna) seguendo i genitori.
-  function calcolaGrafo(commits) {
-    const lanes = []; // id (breve) del prossimo commit atteso in ogni corsia
-    const out = [];
-    for (const c of commits) {
-      const sid = c.id_breve;
-      const cols = [];
-      lanes.forEach((l, i) => l === sid && cols.push(i));
-      let col;
-      if (cols.length) col = cols[0];
-      else {
-        col = lanes.indexOf(null);
-        if (col < 0) {
-          col = lanes.length;
-          lanes.push(null);
-        }
-      }
-      // Libera le corsie duplicate che convergono su questo commit.
-      for (let k = 1; k < cols.length; k++) lanes[cols[k]] = null;
-      const genitori = c.genitori || [];
-      lanes[col] = genitori.length ? genitori[0] : null;
-      for (let k = 1; k < genitori.length; k++) {
-        let free = lanes.indexOf(null);
-        if (free < 0) {
-          free = lanes.length;
-          lanes.push(null);
-        }
-        lanes[free] = genitori[k];
-      }
-      const attive = [];
-      lanes.forEach((l, i) => l !== null && attive.push(i));
-      out.push({ col, attive, n: lanes.length });
-    }
-    return out;
+  let compareA = $state(null);     // { id, breve } marcato per il confronto
+  let confronto = $state(null);    // { a, b, aBreve, bBreve } confronto attivo
+
+  let grafo = $derived(filtriAttivi ? [] : calcolaGrafo(commit));
+  let maxLarghezza = $derived(grafo.reduce((m, g) => Math.max(m, g.larghezza), 1));
+  let larghezzaGrafo = $derived(maxLarghezza * COLW + PAD * 2);
+
+  // Converte un segmento normalizzato (x = colonna, y = 0..1) in un path SVG:
+  // linea dritta per le corsie verticali, curva morbida per le diagonali.
+  function pathSegmento(s) {
+    const x1 = PAD + s.x1 * COLW, x2 = PAD + s.x2 * COLW;
+    const y1 = s.y1 * ROW, y2 = s.y2 * ROW;
+    if (x1 === x2) return `M${x1},${y1} L${x2},${y2}`;
+    const ym = (y1 + y2) / 2;
+    return `M${x1},${y1} C${x1},${ym} ${x2},${ym} ${x2},${y2}`;
   }
+  const cx = (col) => PAD + col * COLW;
 
-  // Filtro per messaggio, autore o hash.
+  // Filtro combinato: testo (messaggio/autore/hash) + autore + solo merge.
   let commitFiltrati = $derived(
-    filtro.trim()
-      ? commit.filter((c) => {
-          const q = filtro.toLowerCase();
-          return (
-            c.titolo.toLowerCase().includes(q) ||
-            c.autore.toLowerCase().includes(q) ||
-            c.id_breve.includes(q)
-          );
-        })
-      : commit
+    commit.filter((c) => {
+      if (filtroAutore && c.autore !== filtroAutore) return false;
+      if (soloMerge && c.genitori.length < 2) return false;
+      if (filtro.trim()) {
+        const q = filtro.toLowerCase();
+        if (!(c.titolo.toLowerCase().includes(q) || c.autore.toLowerCase().includes(q) || c.id_breve.includes(q)))
+          return false;
+      }
+      return true;
+    })
   );
+  // Il grafo si disegna solo quando non ci sono filtri attivi (indici allineati).
+  let filtriAttivi = $derived(!!filtro.trim() || !!filtroAutore || soloMerge);
 
-  // Quando cambia il commit selezionato, ricarica i file e mostra tutto il diff.
+  // Quando cambia il commit selezionato, ricarica i file e azzera lo stato.
   $effect(() => {
     if (!scelto || !stato.percorso) {
       file = [];
       return;
     }
     fileScelto = null;
+    genitoreDiff = 0;
     api.listaFileCommit(stato.percorso, scelto).then((f) => (file = f));
+    api.statCommit(stato.percorso, scelto)
+      .then((v) => (statFile = Object.fromEntries(v.map((x) => [x.percorso, x]))))
+      .catch(() => (statFile = {}));
   });
 
-  // Carica il diff: del file scelto, oppure dell'intero commit.
+  // Carica il diff: del file scelto, oppure dell'intero commit (rispetto al
+  // genitore selezionato, utile per i merge).
   $effect(() => {
     if (!scelto || !stato.percorso) {
       diffTesto = "";
       return;
     }
     stato.tic;
-    const p = fileScelto
-      ? api.diffCommitFile(stato.percorso, scelto, fileScelto, stato.ignoraSpazi)
-      : api.diffCommit(stato.percorso, scelto, stato.ignoraSpazi);
+    const p = confronto
+      ? api.diffTraCommit(stato.percorso, confronto.a, confronto.b, stato.ignoraSpazi)
+      : fileScelto
+        ? api.diffCommitFile(stato.percorso, scelto, fileScelto, stato.ignoraSpazi)
+        : api.diffCommitGenitore(stato.percorso, scelto, genitoreDiff, stato.ignoraSpazi);
     p.then((t) => (diffTesto = t)).catch(() => (diffTesto = ""));
   });
+
+  // --- Drag&drop: trascina un commit su un ramo per il cherry-pick ---
+  function iniziaTrascina(e, c) {
+    stato.trascina = { tipo: "commit", id: c.id, breve: c.id_breve };
+    e.dataTransfer.effectAllowed = "copy";
+    e.dataTransfer.setData("application/x-oops-commit", c.id);
+  }
+
+  // Salto a un commit richiesto dalla ricerca globale.
+  $effect(() => {
+    const id = stato.commitScelto;
+    if (id && commit.some((c) => c.id === id)) {
+      scelto = id;
+      stato.commitScelto = null;
+      // porta in vista la voce selezionata
+      queueMicrotask(() => document.querySelector(".voce-commit.scelto")?.scrollIntoView({ block: "center" }));
+    }
+  });
+
+  // --- Heat map: colora i nodi per quantità di modifiche (churn) ---
+  let calore = $state({}); // id -> churn
+  let maxCalore = $derived(Math.max(1, ...Object.values(calore)));
+  $effect(() => {
+    stato.tic;
+    if (!stato.heatMap || !stato.percorso) {
+      calore = {};
+      return;
+    }
+    api.calore(stato.percorso, limite).then((v) => {
+      const m = {};
+      for (const c of v) m[c.id] = c.churn;
+      calore = m;
+    }).catch(() => (calore = {}));
+  });
+
+  // Colore "caldo" da verde (poco) a rosso (tanto), scala logaritmica.
+  function coloreCalore(id) {
+    const v = calore[id] ?? 0;
+    const t = Math.min(1, Math.log2(1 + v) / Math.log2(1 + maxCalore));
+    const h = 120 - Math.round(t * 120); // 120=verde → 0=rosso
+    return `hsl(${h}, 70%, 55%)`;
+  }
+
+  // --- Menu contestuale (clic destro su un commit) ---
+  let menu = $state(null); // { x, y, id }
+  function apriMenu(e, c) {
+    e.preventDefault();
+    scelto = c.id;
+    menu = { x: e.clientX, y: e.clientY, id: c.id };
+  }
+  function chiudiMenu() { menu = null; }
+  function azioneMenu(fn) { menu = null; fn(); }
+
+  // --- Hover card ricca sul commit ---
+  let hover = $state(null); // { c, x, y }
+  let timerHover;
+  function entra(e, c) {
+    clearTimeout(timerHover);
+    const r = e.currentTarget.getBoundingClientRect();
+    const x = r.right + 8, y = Math.max(8, r.top);
+    timerHover = setTimeout(() => (hover = { c, x, y }), 350);
+  }
+  function esci() {
+    clearTimeout(timerHover);
+    hover = null;
+  }
+
+  function segnaConfronto() {
+    compareA = { id: scelto, breve: datiScelto?.id_breve };
+    stato.avvisa("Segnato " + datiScelto?.id_breve + " per il confronto");
+  }
+  function confrontaConMarcato() {
+    if (!compareA) return;
+    confronto = { a: compareA.id, b: scelto, aBreve: compareA.breve, bBreve: datiScelto?.id_breve };
+    fileScelto = null;
+  }
 
   async function reset(modo) {
     const msg =
@@ -239,34 +321,75 @@
 <div class="cronologia">
   <div class="lista-commit">
     <div class="cerca-commit">
-      <input bind:value={filtro} placeholder="Cerca per messaggio, autore o hash…" />
+      <input bind:value={filtro} placeholder="Cerca…" />
+      <button class="fantasma heat-toggle" class:on={stato.heatMap}
+        title="Heat map: colora i commit per quantità di modifiche"
+        onclick={() => (stato.heatMap = !stato.heatMap)}>🔥</button>
+    </div>
+    <div class="cronologia-filtri">
+      <select bind:value={filtroAutore} title="Filtra per autore">
+        <option value="">Tutti gli autori</option>
+        {#each autori as a}<option value={a}>{a}</option>{/each}
+      </select>
+      <button class="fantasma" class:on={soloMerge} title="Solo commit di merge" onclick={() => (soloMerge = !soloMerge)}>⑃ merge</button>
+      <span class="spazio-flex"></span>
+      <button class="fantasma" title="Riduci" onclick={() => (zoom = Math.max(0.7, +(zoom - 0.15).toFixed(2)))}>−</button>
+      <span class="zoom-eti">{Math.round(zoom * 100)}%</span>
+      <button class="fantasma" title="Ingrandisci" onclick={() => (zoom = Math.min(1.6, +(zoom + 0.15).toFixed(2)))}>+</button>
     </div>
     {#if commitFiltrati.length === 0}
       <div class="lista-vuota">
         {commit.length === 0 ? "Nessun commit ancora. Fanne uno! 🌱" : "Nessun commit corrisponde."}
       </div>
     {/if}
-    {#each commitFiltrati as c, i}
-      <div class="voce-commit" class:scelto={scelto === c.id} class:con-grafo={grafo.length > 0} onclick={() => (scelto = c.id)}>
+    {#each commitFiltrati as c, i (c.id)}
+      <div
+        class="voce-commit"
+        class:scelto={scelto === c.id}
+        class:con-grafo={grafo.length > 0}
+        style={grafo.length > 0 ? `height:${ROW}px` : ""}
+        in:fly={{ y: -10, duration: 220 }}
+        draggable="true"
+        ondragstart={(e) => iniziaTrascina(e, c)}
+        ondragend={() => (stato.trascina = null)}
+        onclick={() => (scelto = c.id)}
+        oncontextmenu={(e) => apriMenu(e, c)}
+        onmouseenter={(e) => entra(e, c)}
+        onmouseleave={esci}
+      >
         {#if grafo[i]}
-          <svg class="grafo" width={maxCol * 12 + 6} height="46">
-            {#each grafo[i].attive as col}
-              <line x1={col * 12 + 6} y1="0" x2={col * 12 + 6} y2="46" stroke={COLORI[col % COLORI.length]} stroke-width="2" opacity="0.5" />
+          <svg class="grafo" width={larghezzaGrafo} height={ROW} style="flex:0 0 {larghezzaGrafo}px">
+            {#each grafo[i].segmenti as s}
+              <path d={pathSegmento(s)} stroke={s.colore} stroke-width="2" fill="none" opacity="0.85" />
             {/each}
-            <line x1={grafo[i].col * 12 + 6} y1="0" x2={grafo[i].col * 12 + 6} y2="46" stroke={COLORI[grafo[i].col % COLORI.length]} stroke-width="2" opacity="0.5" />
-            <circle cx={grafo[i].col * 12 + 6} cy="23" r="4" fill={COLORI[grafo[i].col % COLORI.length]} />
+            {#if stato.heatMap}
+              <circle cx={cx(grafo[i].col)} cy={ROW / 2} r="6"
+                fill={coloreCalore(c.id)} stroke="var(--sfondo)" stroke-width="1.5" />
+            {:else}
+              <circle cx={cx(grafo[i].col)} cy={ROW / 2} r={grafo[i].merge ? 5.5 : 4.5}
+                fill={grafo[i].merge ? "var(--sfondo)" : grafo[i].colore}
+                stroke={grafo[i].colore} stroke-width="2.5" />
+            {/if}
           </svg>
         {/if}
+        <div
+          class="avatar"
+          style="background:{coloreAvatar(c.email || c.autore)}"
+          title="{c.autore} <{c.email}>"
+        >{iniziali(c.autore)}</div>
         <div class="voce-corpo">
-        <div class="titolo">
-          {#each c.riferimenti as r}<span class="deco">{r}</span>{/each}{c.titolo}
-        </div>
-        <div class="meta">
-          <span class="hash">{c.id_breve}</span>
-          {#if c.genitori.length > 1}<span class="merge">merge</span>{/if}
-          <span>{c.autore}</span>
-          <span>{c.data}</span>
-        </div>
+          <div class="titolo">
+            {#each c.decori as r}
+              <span class="badge-ref {r.tipo}" title={r.tipo}>{iconaRef[r.tipo] || ""} {r.nome}</span>
+            {/each}
+            {c.titolo}
+          </div>
+          <div class="meta">
+            <span class="hash">{c.id_breve}</span>
+            {#if c.genitori.length > 1}<span class="merge">merge</span>{/if}
+            <span class="autore">{c.autore}</span>
+            <span title={c.data}>{tempoRelativo(c.timestamp)}</span>
+          </div>
         </div>
       </div>
     {/each}
@@ -276,6 +399,13 @@
   </div>
 
   <div class="commit-dettaglio">
+    {#if confronto}
+      <div class="confronto-banner">
+        <span>⇄ Confronto <b>{confronto.aBreve}</b> → <b>{confronto.bBreve}</b></span>
+        <span class="spazio-flex"></span>
+        <button class="fantasma" onclick={() => (confronto = null)}>✕ Chiudi confronto</button>
+      </div>
+    {/if}
     {#if datiScelto}
       <div class="azioni-commit">
         <span class="hash">{datiScelto.id_breve}</span>
@@ -294,6 +424,18 @@
         <button onclick={copiaHash} title="Copia l'hash">⧉</button>
       </div>
 
+      {#if datiScelto.genitori.length > 1}
+        <div class="merge-viewer">
+          <span>Commit di merge — confronta con:</span>
+          {#each datiScelto.genitori as g, gi}
+            <button
+              class:on={genitoreDiff === gi}
+              onclick={() => { fileScelto = null; genitoreDiff = gi; }}
+            >Genitore {gi + 1} ({g})</button>
+          {/each}
+        </div>
+      {/if}
+
       <div class="file-commit">
         <div
           class="riga-file"
@@ -309,8 +451,11 @@
             onclick={() => (fileScelto = f.percorso)}
           >
             <span class="stato {f.stato}">{simbolo[f.stato]}</span>
+            <span class="lang-dot" style="background:{coloreLingua(f.percorso)}" title={estensione(f.percorso) || "file"}></span>
             <span class="nome">{f.percorso}</span>
+            <BarraStat stat={statFile[f.percorso]} />
             <span class="ops">
+              <button title="Cronologia / blame del file" onclick={(e) => { e.stopPropagation(); stato.storiaFile = f.percorso; }}>📜</button>
               <button title="Ripristina questo file a questa versione" onclick={(e) => { e.stopPropagation(); ripristina(f.percorso); }}>↺</button>
             </span>
           </div>
@@ -323,6 +468,46 @@
     {/if}
   </div>
 </div>
+
+{#if hover}
+  <div class="hover-card" style="left:{hover.x}px; top:{hover.y}px">
+    <div class="hc-titolo">{hover.c.titolo}</div>
+    <div class="hc-riga"><span class="hc-k">SHA</span><span class="hash">{hover.c.id_breve}</span></div>
+    <div class="hc-riga"><span class="hc-k">Autore</span>{hover.c.autore}{hover.c.email ? " <" + hover.c.email + ">" : ""}</div>
+    <div class="hc-riga"><span class="hc-k">Data</span>{hover.c.data} · {tempoRelativo(hover.c.timestamp)}</div>
+    <div class="hc-riga"><span class="hc-k">Genitori</span>{hover.c.genitori.join(", ") || "—"}{hover.c.genitori.length > 1 ? " (merge)" : ""}</div>
+    {#if hover.c.decori.length > 0}
+      <div class="hc-badges">
+        {#each hover.c.decori as r}<span class="badge-ref {r.tipo}">{iconaRef[r.tipo] || ""} {r.nome}</span>{/each}
+      </div>
+    {/if}
+  </div>
+{/if}
+
+{#if menu}
+  <div class="menu-ctx-overlay" onclick={chiudiMenu} oncontextmenu={(e) => { e.preventDefault(); chiudiMenu(); }}></div>
+  <div class="menu-ctx" style="left:{menu.x}px; top:{menu.y}px">
+    <button onclick={() => azioneMenu(checkout)}>Checkout</button>
+    <button onclick={() => azioneMenu(cherry)}>🍒 Cherry-pick</button>
+    <button onclick={() => azioneMenu(revert)}>↶ Revert</button>
+    <div class="mc-sep"></div>
+    <button onclick={() => azioneMenu(() => reset("soft"))}>Reset soft</button>
+    <button onclick={() => azioneMenu(() => reset("mixed"))}>Reset mixed</button>
+    <button class="pericolo" onclick={() => azioneMenu(() => reset("hard"))}>Reset hard</button>
+    <div class="mc-sep"></div>
+    <button onclick={() => azioneMenu(() => (mostraRamo = true))}>⎇ Crea ramo da qui</button>
+    <button onclick={() => azioneMenu(apriRebaseInt)}>↻ Rebase interattivo</button>
+    <button onclick={() => azioneMenu(() => (mostraCondensa = true))}>🗜 Condensa</button>
+    <div class="mc-sep"></div>
+    <button onclick={() => azioneMenu(esportaPatch)}>🗂 Esporta patch</button>
+    <button onclick={() => azioneMenu(copiaHash)}>⧉ Copia SHA</button>
+    <div class="mc-sep"></div>
+    <button onclick={() => azioneMenu(segnaConfronto)}>⇄ Segna per confronto</button>
+    {#if compareA && compareA.id !== scelto}
+      <button onclick={() => azioneMenu(confrontaConMarcato)}>⇄ Confronta con {compareA.breve}</button>
+    {/if}
+  </div>
+{/if}
 
 {#if mostraRamo}
   <div class="overlay" onclick={() => (mostraRamo = false)}>

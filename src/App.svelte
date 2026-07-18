@@ -1,8 +1,9 @@
 <script>
-  // Componente principale: decide tra schermata di avvio e area di lavoro,
-  // e contiene la toolbar (Fetch/Pull/Push) e le schede Modifiche/Cronologia.
+  // Componente principale: schermata di avvio oppure area di lavoro con toolbar,
+  // barra laterale (navigazione + rami), vista corrente e status bar.
   import { listen } from "@tauri-apps/api/event";
   import { openPath } from "@tauri-apps/plugin-opener";
+  import { confirm } from "@tauri-apps/plugin-dialog";
   import {
     isPermissionGranted,
     requestPermission,
@@ -12,16 +13,32 @@
   import { stato } from "./lib/stato.svelte.js";
   import Avvio from "./components/Avvio.svelte";
   import BarraLaterale from "./components/BarraLaterale.svelte";
+  import Dashboard from "./components/Dashboard.svelte";
   import Modifiche from "./components/Modifiche.svelte";
   import Cronologia from "./components/Cronologia.svelte";
+  import Insights from "./components/Insights.svelte";
+  import Timeline from "./components/Timeline.svelte";
+  import Terminale from "./components/Terminale.svelte";
   import Impostazioni from "./components/Impostazioni.svelte";
   import Credenziali from "./components/Credenziali.svelte";
+  import Ricerca from "./components/Ricerca.svelte";
+  import GitFlow from "./components/GitFlow.svelte";
+  import Blame from "./components/Blame.svelte";
 
-  let vista = $state("modifiche"); // "modifiche" | "cronologia"
-  let info = $state(null); // StatoRepo, serve alla toolbar per avanti/indietro
+  let info = $state(null); // StatoRepo, serve a toolbar e status bar
   let mostraImpostazioni = $state(false);
+  let mostraGitFlow = $state(false);
   let menuPush = $state(false);
   let menuPull = $state(false);
+
+  const titoli = {
+    panoramica: "Panoramica",
+    modifiche: "Modifiche",
+    cronologia: "Cronologia",
+    insights: "Insights",
+    timeline: "Timeline",
+    terminale: "Terminale",
+  };
 
   $effect(() => {
     stato.tic;
@@ -47,7 +64,6 @@
     return () => promessa.then((un) => un());
   });
 
-  // Invia una notifica desktop (chiedendo il permesso la prima volta).
   async function notifica(testo) {
     try {
       let ok = await isPermissionGranted();
@@ -59,21 +75,27 @@
   // Scorciatoie da tastiera globali.
   function tasti(e) {
     if (!stato.percorso) return;
-    if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && e.key === "r")) {
+    const cmd = e.ctrlKey || e.metaKey;
+    if (cmd && e.key === "k") {
+      e.preventDefault();
+      stato.ricercaAperta = !stato.ricercaAperta;
+    } else if (e.key === "F5" || (cmd && e.key === "r")) {
       e.preventDefault();
       stato.ricarica();
-    } else if ((e.ctrlKey || e.metaKey) && e.key === "1") {
-      vista = "modifiche";
-    } else if ((e.ctrlKey || e.metaKey) && e.key === "2") {
-      vista = "cronologia";
+    } else if (cmd && e.key === "1") stato.vista = "panoramica";
+    else if (cmd && e.key === "2") stato.vista = "modifiche";
+    else if (cmd && e.key === "3") stato.vista = "cronologia";
+    else if (cmd && e.shiftKey && (e.key === "z" || e.key === "Z")) {
+      e.preventDefault();
+      rifai();
+    } else if (cmd && e.key === "z") {
+      e.preventDefault();
+      annulla();
     }
   }
 
-  // Riconosce gli errori di autenticazione, per chiedere le credenziali.
   const eAuth = (e) => /authenticat|401|403|credential|auth/i.test(String(e));
 
-  // Esegue un'operazione di rete; se fallisce per autenticazione chiede le
-  // credenziali all'utente e riprova una volta. `fn` riceve le credenziali.
   async function azioneRete(fn, nome) {
     stato.occupato = true;
     try {
@@ -106,16 +128,45 @@
     }
   }
 
+  async function annulla() {
+    if (!(await confirm("Annullare l'ultima operazione? (reset allo stato precedente, le modifiche non salvate possono andare perse)"))) return;
+    try {
+      // Ricorda lo stato attuale per un eventuale "Rifai".
+      const oid = (await api.eseguiGit(stato.percorso, ["rev-parse", "HEAD"])).trim();
+      const msg = await api.annullaUltima(stato.percorso);
+      if (/^[0-9a-f]{7,40}$/.test(oid)) stato.redoOid = oid;
+      stato.avvisa(msg, "ok");
+      stato.ricarica();
+    } catch (e) {
+      stato.avvisa("Annulla fallito: " + e, "errore");
+    }
+  }
+
+  async function rifai() {
+    if (!stato.redoOid) {
+      stato.avvisa("Niente da rifare", "errore");
+      return;
+    }
+    const oid = stato.redoOid;
+    try {
+      await api.eseguiGit(stato.percorso, ["reset", "--hard", oid]);
+      stato.redoOid = null;
+      stato.avvisa("Operazione ripristinata (redo)", "ok");
+      stato.ricarica();
+    } catch (e) {
+      stato.avvisa("Rifai fallito: " + e, "errore");
+    }
+  }
+
   const apriCartella = () => openPath(stato.percorso).catch(() => {});
 
   const fetch = () => azioneRete((c) => api.fetch(stato.percorso, "origin", c), "Fetch");
-  const pull = (strategia = "ff") => {
-    menuPull = false;
-    azioneRete((c) => api.pull(stato.percorso, "origin", strategia, c), "Pull");
-  };
+  const pull = (strategia = "ff") => { menuPull = false; azioneRete((c) => api.pull(stato.percorso, "origin", strategia, c), "Pull"); };
   const push = () => azioneRete((c) => api.push(stato.percorso, "origin", false, c), "Push");
   const pushForza = () => { menuPush = false; azioneRete((c) => api.push(stato.percorso, "origin", true, c), "Push forzato"); };
   const pushTags = () => { menuPush = false; azioneRete((c) => api.pushTags(stato.percorso, "origin", c), "Push tag"); };
+
+  let nCambi = $derived(info ? info.in_stage.length + info.non_in_stage.length : 0);
 </script>
 
 <svelte:window onkeydown={tasti} onfocus={() => stato.percorso && stato.ricarica()} />
@@ -124,7 +175,7 @@
   <Avvio />
 {:else}
   <div class="app">
-    <BarraLaterale />
+    <BarraLaterale {info} />
 
     <div class="principale">
       <div class="toolbar">
@@ -136,6 +187,10 @@
         {/if}
         <span class="spazio"></span>
         <div class="sincro">
+          <button class="fantasma" title="Cerca (Ctrl+K)" onclick={() => (stato.ricercaAperta = true)}>⌕</button>
+          <button class="fantasma" title="Annulla ultima operazione (Ctrl+Z)" onclick={annulla}>↶</button>
+          <button class="fantasma" title="Rifai (Ctrl+Shift+Z)" onclick={rifai} disabled={!stato.redoOid}>↷</button>
+          <button class="fantasma" title="Git Flow: nuova feature" onclick={() => (mostraGitFlow = true)}>🌱</button>
           <button class="fantasma" title="Aggiorna (F5)" onclick={() => stato.ricarica()}>⟳</button>
           <button class="fantasma" title="Apri la cartella" onclick={apriCartella}>📂</button>
           <button onclick={fetch} disabled={stato.occupato}>Fetch</button>
@@ -164,21 +219,31 @@
         </div>
       </div>
 
-      <div class="tabs">
-        <div class="tab" class:attivo={vista === "modifiche"} onclick={() => (vista = "modifiche")}>
-          Modifiche
-        </div>
-        <div class="tab" class:attivo={vista === "cronologia"} onclick={() => (vista = "cronologia")}>
-          Cronologia
-        </div>
+      <div class="contenuto">
+        {#if stato.vista === "panoramica"}
+          <Dashboard vai={(v) => (stato.vista = v)} />
+        {:else if stato.vista === "modifiche"}
+          <Modifiche />
+        {:else if stato.vista === "cronologia"}
+          <Cronologia />
+        {:else if stato.vista === "insights"}
+          <Insights />
+        {:else if stato.vista === "timeline"}
+          <Timeline />
+        {:else if stato.vista === "terminale"}
+          <Terminale />
+        {/if}
       </div>
 
-      <div class="contenuto">
-        {#if vista === "modifiche"}
-          <Modifiche />
-        {:else}
-          <Cronologia />
+      <div class="statusbar">
+        <span class="sb-ramo">⎇ {info?.ramo ?? "…"}</span>
+        {#if info}
+          <span class="sb-sync">↑{info.avanti} ↓{info.indietro}</span>
+          <span class="sb-cambi">{nCambi} modific{nCambi === 1 ? "a" : "he"}</span>
         {/if}
+        <span class="spazio"></span>
+        <span class="sb-vista">{titoli[stato.vista] ?? ""}</span>
+        <span class="sb-nome">Oops v0.9.1</span>
       </div>
     </div>
   </div>
@@ -186,6 +251,18 @@
 
 {#if mostraImpostazioni}
   <Impostazioni chiudi={() => (mostraImpostazioni = false)} />
+{/if}
+
+{#if mostraGitFlow}
+  <GitFlow chiudi={() => (mostraGitFlow = false)} />
+{/if}
+
+{#if stato.ricercaAperta}
+  <Ricerca />
+{/if}
+
+{#if stato.storiaFile}
+  <Blame file={stato.storiaFile} chiudi={() => (stato.storiaFile = null)} />
 {/if}
 
 {#if stato.credAperta}

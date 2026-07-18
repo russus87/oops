@@ -26,6 +26,17 @@
     [righe[i + 1], righe[i]] = [righe[i], righe[i + 1]];
   }
 
+  // Riordino con drag&drop delle righe.
+  let trascina = $state(-1);
+  let sopra = $state(-1);
+  function muovi(da, a) {
+    if (da === a || da < 0) return;
+    const copia = [...righe];
+    const [el] = copia.splice(da, 1);
+    copia.splice(a, 0, el);
+    righe = copia;
+  }
+
   async function esegui() {
     const mosse = righe.map((r) => ({
       id: r.id,
@@ -54,7 +65,18 @@
         Dall'alto (più vecchio) in basso (più recente). "squash" unisce nel commit sopra.
       </p>
       {#each righe as r, i}
-        <div class="rb-riga">
+        <div
+          class="rb-riga"
+          class:sopra={sopra === i}
+          class:trascinata={trascina === i}
+          draggable="true"
+          ondragstart={() => (trascina = i)}
+          ondragover={(e) => { e.preventDefault(); sopra = i; }}
+          ondragleave={() => (sopra === i && (sopra = -1))}
+          ondrop={(e) => { e.preventDefault(); muovi(trascina, i); trascina = -1; sopra = -1; }}
+          ondragend={() => { trascina = -1; sopra = -1; }}
+        >
+          <span class="rb-drag" title="Trascina per riordinare">⠿</span>
           <span class="rb-ord">
             <button class="fantasma" onclick={() => su(i)}>▲</button>
             <button class="fantasma" onclick={() => giu(i)}>▼</button>

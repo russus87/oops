@@ -8,10 +8,42 @@
   let mostraClona = $state(false);
   let urlClona = $state("");
 
-  // Carica i recenti all'avvio del componente.
+  let workspaces = $state([]);
+  let mostraWs = $state(false);
+  let wsNome = $state("");
+  let wsScelti = $state(new Set());
+
+  // Carica recenti e workspace all'avvio del componente.
   $effect(() => {
     api.recentiLista().then((r) => (recenti = r));
+    api.workspaceLista().then((w) => (workspaces = w)).catch(() => {});
   });
+
+  function toggleWsRepo(percorso) {
+    const s = new Set(wsScelti);
+    s.has(percorso) ? s.delete(percorso) : s.add(percorso);
+    wsScelti = s;
+  }
+
+  async function salvaWorkspace() {
+    if (!wsNome.trim() || wsScelti.size === 0) return;
+    try {
+      workspaces = await api.workspaceSalva(wsNome.trim(), [...wsScelti]);
+      mostraWs = false;
+      wsNome = "";
+      wsScelti = new Set();
+      stato.avvisa("Workspace salvato", "ok");
+    } catch (e) {
+      stato.avvisa(String(e), "errore");
+    }
+  }
+
+  async function eliminaWorkspace(nome, ev) {
+    ev.stopPropagation();
+    workspaces = await api.workspaceElimina(nome);
+  }
+
+  const nomeBreve = (p) => p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || p;
 
   // Apre una cartella esistente come repository.
   async function apriCartella() {
@@ -85,7 +117,30 @@
     <button class="primario" onclick={apriCartella}>Apri repository</button>
     <button onclick={inizializza}>Nuovo repository</button>
     <button onclick={() => (mostraClona = true)}>Clona…</button>
+    {#if recenti.length > 0}
+      <button onclick={() => (mostraWs = true)}>Nuovo workspace</button>
+    {/if}
   </div>
+
+  {#if workspaces.length > 0}
+    <div class="recenti">
+      <h3>Workspace</h3>
+      {#each workspaces as w}
+        <div class="ws-gruppo">
+          <div class="ws-testa">
+            <span class="nome">🗂 {w.nome}</span>
+            <span class="perc">{w.percorsi.length} repository</span>
+            <button class="x fantasma" onclick={(e) => eliminaWorkspace(w.nome, e)}>✕</button>
+          </div>
+          <div class="ws-repos">
+            {#each w.percorsi as p}
+              <button class="ws-repo" onclick={() => apriRecente(p)} title={p}>{nomeBreve(p)}</button>
+            {/each}
+          </div>
+        </div>
+      {/each}
+    </div>
+  {/if}
 
   {#if recenti.length > 0}
     <div class="recenti">
@@ -100,6 +155,33 @@
     </div>
   {/if}
 </div>
+
+{#if mostraWs}
+  <div class="overlay" onclick={() => (mostraWs = false)}>
+    <div class="modale" onclick={(e) => e.stopPropagation()}>
+      <h2>Nuovo workspace</h2>
+      <div class="campo">
+        <label for="wsn">Nome</label>
+        <input id="wsn" bind:value={wsNome} placeholder="es. Progetto X" />
+      </div>
+      <div class="campo">
+        <label>Repository da includere</label>
+        <div class="ws-scelta">
+          {#each recenti as r}
+            <label class="ws-check">
+              <input type="checkbox" checked={wsScelti.has(r.percorso)} onchange={() => toggleWsRepo(r.percorso)} />
+              <span>{r.nome}</span>
+            </label>
+          {/each}
+        </div>
+      </div>
+      <div class="pulsanti">
+        <button onclick={() => (mostraWs = false)}>Annulla</button>
+        <button class="primario" disabled={!wsNome.trim() || wsScelti.size === 0} onclick={salvaWorkspace}>Salva</button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 {#if mostraClona}
   <div class="overlay" onclick={() => (mostraClona = false)}>

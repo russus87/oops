@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::model::RepoRecente;
+use crate::model::{RepoRecente, Workspace};
 
 /// Quanti repository recenti tenere al massimo.
 const MAX: usize = 15;
@@ -53,6 +53,45 @@ pub fn rimuovi(file: &Path, percorso: &str) -> Result<Vec<RepoRecente>, String> 
     let mut lista = carica(file);
     lista.retain(|r| r.percorso != percorso);
     salva(file, &lista)?;
+    Ok(lista)
+}
+
+// --- Workspace (gruppi di repository) ---
+
+/// Legge i workspace salvati (vuoto se il file manca).
+pub fn workspace_carica(file: &Path) -> Vec<Workspace> {
+    std::fs::read_to_string(file)
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+fn workspace_salva_file(file: &Path, lista: &[Workspace]) -> Result<(), String> {
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let testo = serde_json::to_string_pretty(lista).map_err(|e| e.to_string())?;
+    std::fs::write(file, testo).map_err(|e| e.to_string())
+}
+
+/// Crea o aggiorna un workspace (per nome) con l'elenco di repository dato.
+pub fn workspace_salva(
+    file: &Path,
+    nome: &str,
+    percorsi: Vec<String>,
+) -> Result<Vec<Workspace>, String> {
+    let mut lista = workspace_carica(file);
+    lista.retain(|w| w.nome != nome);
+    lista.insert(0, Workspace { nome: nome.to_string(), percorsi });
+    workspace_salva_file(file, &lista)?;
+    Ok(lista)
+}
+
+/// Elimina un workspace per nome.
+pub fn workspace_elimina(file: &Path, nome: &str) -> Result<Vec<Workspace>, String> {
+    let mut lista = workspace_carica(file);
+    lista.retain(|w| w.nome != nome);
+    workspace_salva_file(file, &lista)?;
     Ok(lista)
 }
 

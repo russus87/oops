@@ -26,10 +26,11 @@ pub fn clona(
     url: &str,
     destinazione: &str,
     cred: Option<crate::model::Credenziali>,
+    insicuro: bool,
 ) -> Result<String, String> {
     // Le credenziali (per repo privati) sono gestite dai callback del modulo remote.
     let mut fo = git2::FetchOptions::new();
-    fo.remote_callbacks(crate::remote::costruisci_callbacks(cred));
+    fo.remote_callbacks(crate::remote::costruisci_callbacks(cred, insicuro));
 
     let mut builder = git2::build::RepoBuilder::new();
     builder.fetch_options(fo);

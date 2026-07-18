@@ -12,18 +12,21 @@ use notify::{RecursiveMode, Watcher};
 use tauri::{AppHandle, Emitter};
 
 use oops_core::model::{
-    ConfigUtente, ConflittoVersioni, Credenziali, FileModificato, MossaRebase, Ramo, Remoto,
-    RepoRecente, StatoRepo, Submodulo, Tag, VoceBlame, VoceLog, VoceReflog, VoceStash,
-    VoceWorktree,
+    Calore, ConfigUtente, ConflittoVersioni, Credenziali, FileModificato, Insights, MossaRebase,
+    Panoramica, Ramo, Remoto, RepoRecente, StatFile, StatoRepo, Submodulo, Tag, VoceBlame, VoceLog,
+    VoceReflog, VoceStash, VoceWorktree, Workspace,
 };
 use oops_core::{
-    azioni, blame, commit, conflitti, diff, patch, rami, rebase_int, reflog, remote, repo, stage,
-    stash, storage, submoduli, tag, worktree,
+    azioni, blame, commit, conflitti, contenuto, diff, esegui, insights, panoramica, patch, rami,
+    rebase_int, reflog, remote, repo, stage, stash, storage, submoduli, tag, worktree,
 };
 use tauri::{Manager, State};
 
 /// Percorso del file JSON con i repository recenti (in app_config_dir).
 struct FileRecenti(PathBuf);
+
+/// Percorso del file JSON con i workspace (gruppi di repository).
+struct FileWorkspaces(PathBuf);
 
 /// L'osservatore del filesystem del repository aperto (per l'auto-refresh).
 #[derive(Default)]
@@ -71,8 +74,9 @@ fn clona(
     url: String,
     destinazione: String,
     cred: Option<Credenziali>,
+    insicuro: bool,
 ) -> Result<String, String> {
-    repo::clona(&url, &destinazione, cred)
+    repo::clona(&url, &destinazione, cred, insicuro)
 }
 
 // ---- Stato e cronologia ----
@@ -80,6 +84,11 @@ fn clona(
 #[tauri::command]
 fn stato(percorso: String) -> Result<StatoRepo, String> {
     repo::stato(&percorso)
+}
+
+#[tauri::command]
+fn panoramica(percorso: String) -> Result<Panoramica, String> {
+    panoramica::panoramica(&percorso)
 }
 
 #[tauri::command]
@@ -186,6 +195,16 @@ fn diff_commit(percorso: String, id: String, ignora_spazi: bool) -> Result<Strin
 }
 
 #[tauri::command]
+fn diff_commit_genitore(
+    percorso: String,
+    id: String,
+    genitore: usize,
+    ignora_spazi: bool,
+) -> Result<String, String> {
+    diff::commit_vs_genitore(&percorso, &id, genitore, ignora_spazi)
+}
+
+#[tauri::command]
 fn lista_file_commit(percorso: String, id: String) -> Result<Vec<FileModificato>, String> {
     diff::lista_file_commit(&percorso, &id)
 }
@@ -280,6 +299,11 @@ fn reset_commit(percorso: String, id: String, modo: String) -> Result<(), String
 #[tauri::command]
 fn cherry_pick(percorso: String, id: String) -> Result<(), String> {
     azioni::cherry_pick(&percorso, &id)
+}
+
+#[tauri::command]
+fn cherry_pick_su(percorso: String, id: String, ramo: String) -> Result<(), String> {
+    azioni::cherry_pick_su(&percorso, &id, &ramo)
 }
 
 #[tauri::command]
@@ -429,8 +453,13 @@ fn remoti_lista(percorso: String) -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
-fn fetch(percorso: String, remoto: String, cred: Option<Credenziali>) -> Result<(), String> {
-    remote::fetch(&percorso, &remoto, cred)
+fn fetch(
+    percorso: String,
+    remoto: String,
+    cred: Option<Credenziali>,
+    insicuro: bool,
+) -> Result<(), String> {
+    remote::fetch(&percorso, &remoto, cred, insicuro)
 }
 
 #[tauri::command]
@@ -439,8 +468,9 @@ fn pull(
     remoto: String,
     strategia: String,
     cred: Option<Credenziali>,
+    insicuro: bool,
 ) -> Result<String, String> {
-    remote::pull(&percorso, &remoto, &strategia, cred)
+    remote::pull(&percorso, &remoto, &strategia, cred, insicuro)
 }
 
 #[tauri::command]
@@ -449,13 +479,19 @@ fn push(
     remoto: String,
     forza: bool,
     cred: Option<Credenziali>,
+    insicuro: bool,
 ) -> Result<(), String> {
-    remote::push(&percorso, &remoto, forza, cred)
+    remote::push(&percorso, &remoto, forza, cred, insicuro)
 }
 
 #[tauri::command]
-fn push_tags(percorso: String, remoto: String, cred: Option<Credenziali>) -> Result<(), String> {
-    remote::push_tags(&percorso, &remoto, cred)
+fn push_tags(
+    percorso: String,
+    remoto: String,
+    cred: Option<Credenziali>,
+    insicuro: bool,
+) -> Result<(), String> {
+    remote::push_tags(&percorso, &remoto, cred, insicuro)
 }
 
 #[tauri::command]
@@ -484,8 +520,176 @@ fn elimina_ramo_remoto(
     remoto: String,
     ramo: String,
     cred: Option<Credenziali>,
+    insicuro: bool,
 ) -> Result<(), String> {
-    remote::elimina_ramo_remoto(&percorso, &remoto, &ramo, cred)
+    remote::elimina_ramo_remoto(&percorso, &remoto, &ramo, cred, insicuro)
+}
+
+// ---- Drag&drop ramo-su-ramo, statistiche, insights, undo, terminale ----
+
+#[tauri::command]
+fn merge_rami(percorso: String, sorgente: String, destinazione: String) -> Result<String, String> {
+    rami::merge_rami(&percorso, &sorgente, &destinazione)
+}
+
+#[tauri::command]
+fn rebase_rami(percorso: String, sorgente: String, destinazione: String) -> Result<String, String> {
+    rami::rebase_rami(&percorso, &sorgente, &destinazione)
+}
+
+#[tauri::command]
+fn stat_lavoro(percorso: String, in_stage: bool) -> Result<Vec<StatFile>, String> {
+    diff::stat_lavoro(&percorso, in_stage)
+}
+
+#[tauri::command]
+fn stat_commit(percorso: String, id: String) -> Result<Vec<StatFile>, String> {
+    diff::stat_commit(&percorso, &id)
+}
+
+#[tauri::command]
+fn calore(percorso: String, limite: usize) -> Result<Vec<Calore>, String> {
+    diff::calore(&percorso, limite)
+}
+
+#[tauri::command]
+fn insights(percorso: String, limite: usize) -> Result<Insights, String> {
+    insights::insights(&percorso, limite)
+}
+
+#[tauri::command]
+fn annulla_ultima(percorso: String) -> Result<String, String> {
+    azioni::annulla_ultima(&percorso)
+}
+
+#[tauri::command]
+fn esegui_git(percorso: String, args: Vec<String>) -> Result<String, String> {
+    esegui::git(&percorso, args)
+}
+
+// ---- Compare, stage per riga, cherry-pick avanzato, release notes ----
+
+#[tauri::command]
+fn diff_tra_commit(percorso: String, a: String, b: String, ignora_spazi: bool) -> Result<String, String> {
+    diff::tra_commit(&percorso, &a, &b, ignora_spazi)
+}
+
+#[tauri::command]
+fn stage_righe(percorso: String, patch: String, reverse: bool) -> Result<(), String> {
+    diff::applica_indice(&percorso, &patch, reverse)
+}
+
+#[tauri::command]
+fn cherry_pick_squash(percorso: String, id: String, ramo: String) -> Result<(), String> {
+    azioni::cherry_pick_squash(&percorso, &id, &ramo)
+}
+
+#[tauri::command]
+fn cherry_pick_muovi(percorso: String, id: String, ramo: String) -> Result<(), String> {
+    azioni::cherry_pick_muovi(&percorso, &id, &ramo)
+}
+
+#[tauri::command]
+fn commit_rimuovi(percorso: String, id: String) -> Result<String, String> {
+    rebase_int::rimuovi(&percorso, &id)
+}
+
+#[tauri::command]
+fn note_release(percorso: String, da: String, a: String) -> Result<Vec<VoceLog>, String> {
+    commit::tra(&percorso, &da, &a, 500)
+}
+
+// ---- Workspace ----
+
+#[tauri::command]
+fn workspace_lista(file: State<FileWorkspaces>) -> Vec<Workspace> {
+    storage::workspace_carica(&file.0)
+}
+
+#[tauri::command]
+fn workspace_salva(
+    nome: String,
+    percorsi: Vec<String>,
+    file: State<FileWorkspaces>,
+) -> Result<Vec<Workspace>, String> {
+    storage::workspace_salva(&file.0, &nome, percorsi)
+}
+
+#[tauri::command]
+fn workspace_elimina(nome: String, file: State<FileWorkspaces>) -> Result<Vec<Workspace>, String> {
+    storage::workspace_elimina(&file.0, &nome)
+}
+
+// ---- Anteprima file (markdown / immagini) ----
+
+#[tauri::command]
+fn leggi_testo_lavoro(percorso: String, file: String) -> Result<String, String> {
+    contenuto::testo_lavoro(&percorso, &file)
+}
+
+#[tauri::command]
+fn leggi_b64_lavoro(percorso: String, file: String) -> Result<String, String> {
+    contenuto::b64_lavoro(&percorso, &file)
+}
+
+#[tauri::command]
+fn leggi_b64_head(percorso: String, file: String) -> Result<String, String> {
+    contenuto::b64_head(&percorso, &file)
+}
+
+// ---- Assistente AI (Anthropic): messaggio di commit dal diff in stage ----
+
+#[tauri::command]
+fn genera_commit_ai(percorso: String, token: String, modello: String) -> Result<String, String> {
+    if token.trim().is_empty() {
+        return Err("manca il token API: impostalo nelle Impostazioni".into());
+    }
+    let diff = diff::staged_tutto(&percorso)?;
+    if diff.trim().is_empty() {
+        return Err("niente in stage: aggiungi dei file prima di generare il messaggio".into());
+    }
+    // Tronca i diff enormi per non sforare i limiti/costi.
+    let diff: String = diff.chars().take(12_000).collect();
+    let modello = if modello.trim().is_empty() {
+        "claude-sonnet-5".to_string()
+    } else {
+        modello
+    };
+
+    let prompt = format!(
+        "Sei un assistente che scrive messaggi di commit Git in italiano. Dato il seguente \
+diff in stage, scrivi UN SOLO messaggio di commit conciso: una prima riga (max ~70 caratteri) \
+in stile convenzionale (es. \"fix: …\", \"feat: …\"), poi se utile una riga vuota e un breve corpo. \
+Rispondi SOLO col messaggio, senza virgolette o spiegazioni.\n\nDIFF:\n{diff}"
+    );
+
+    let corpo = serde_json::json!({
+        "model": modello,
+        "max_tokens": 1024,
+        "messages": [{ "role": "user", "content": prompt }]
+    });
+
+    match ureq::post("https://api.anthropic.com/v1/messages")
+        .set("x-api-key", token.trim())
+        .set("anthropic-version", "2023-06-01")
+        .set("content-type", "application/json")
+        .send_json(corpo)
+    {
+        Ok(r) => {
+            let v: serde_json::Value = r.into_json().map_err(|e| e.to_string())?;
+            let testo = v["content"][0]["text"].as_str().unwrap_or("").trim().to_string();
+            if testo.is_empty() {
+                Err("risposta dell'AI vuota".into())
+            } else {
+                Ok(testo)
+            }
+        }
+        Err(ureq::Error::Status(code, r)) => {
+            let dett = r.into_string().unwrap_or_default();
+            Err(format!("errore API Anthropic ({code}): {dett}"))
+        }
+        Err(e) => Err(format!("errore di rete: {e}")),
+    }
 }
 
 // ---- Repository recenti ----
@@ -522,9 +726,10 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(Osservatore::default())
         .setup(|app| {
-            // Il file dei recenti vive nella cartella di config dell'app.
+            // I file di config (recenti, workspace) vivono nella cartella dell'app.
             let dir = app.path().app_config_dir()?;
             app.manage(FileRecenti(dir.join("recenti.json")));
+            app.manage(FileWorkspaces(dir.join("workspace.json")));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -532,6 +737,7 @@ pub fn run() {
             init_repo,
             clona,
             stato,
+            panoramica,
             log,
             log_file,
             blame_file,
@@ -549,6 +755,7 @@ pub fn run() {
             ripristina_file,
             diff_file,
             diff_commit,
+            diff_commit_genitore,
             lista_file_commit,
             diff_commit_file,
             hunk_stage,
@@ -564,6 +771,7 @@ pub fn run() {
             tag_elimina,
             reset_commit,
             cherry_pick,
+            cherry_pick_su,
             config_utente,
             imposta_config_utente,
             rami_lista,
@@ -603,6 +811,27 @@ pub fn run() {
             recenti_aggiungi,
             recenti_rimuovi,
             avvia_osservatore,
+            merge_rami,
+            rebase_rami,
+            stat_lavoro,
+            stat_commit,
+            calore,
+            insights,
+            annulla_ultima,
+            esegui_git,
+            diff_tra_commit,
+            stage_righe,
+            cherry_pick_squash,
+            cherry_pick_muovi,
+            commit_rimuovi,
+            note_release,
+            workspace_lista,
+            workspace_salva,
+            workspace_elimina,
+            leggi_testo_lavoro,
+            leggi_b64_lavoro,
+            leggi_b64_head,
+            genera_commit_ai,
         ])
         .run(tauri::generate_context!())
         .expect("errore durante l'avvio di Oops");

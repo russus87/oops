@@ -20,6 +20,25 @@
   let wtNome = $state("");
   let wtCartella = $state("");
 
+  // Impostazioni AI (Anthropic).
+  let aiToken = $state(stato.aiToken);
+  let aiModello = $state(stato.aiModello);
+  const modelli = ["claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5-20251001"];
+  function salvaAi() {
+    stato.impostaAi(aiToken.trim(), aiModello);
+    stato.avvisa("Impostazioni AI salvate", "ok");
+  }
+
+  // Azioni personalizzate (comandi git salvati).
+  let azNome = $state("");
+  let azComando = $state("");
+  function aggiungiAzione() {
+    if (!azNome.trim() || !azComando.trim()) return;
+    stato.aggiungiAzione(azNome.trim(), azComando.trim());
+    azNome = "";
+    azComando = "";
+  }
+
   $effect(() => {
     api.configUtente(stato.percorso).then((c) => {
       cfgNome = c.nome;
@@ -152,6 +171,26 @@
       </section>
 
       <section>
+        <h3>Assistente AI (Anthropic)</h3>
+        <p style="color:var(--testo2);font-size:12px;margin-top:0">
+          Genera i messaggi di commit dal diff in stage. Il token resta solo su questo
+          computer e non viene mai messo nel repository. Ottieni una chiave da
+          console.anthropic.com.
+        </p>
+        <div class="campo">
+          <label for="ait">Token API (x-api-key)</label>
+          <input id="ait" type="password" bind:value={aiToken} placeholder="sk-ant-…" />
+        </div>
+        <div class="campo">
+          <label for="aim">Modello</label>
+          <select id="aim" bind:value={aiModello}>
+            {#each modelli as m}<option value={m}>{m}</option>{/each}
+          </select>
+        </div>
+        <button class="primario" onclick={salvaAi}>Salva impostazioni AI</button>
+      </section>
+
+      <section>
         <h3>Remoti</h3>
         {#each remoti as r}
           <div class="remoto-riga">
@@ -165,6 +204,26 @@
           <input bind:value={nuovoNome} placeholder="nome (es. origin)" />
           <input bind:value={nuovoUrl} placeholder="URL" />
           <button class="primario" onclick={aggiungiRemoto}>Aggiungi</button>
+        </div>
+      </section>
+
+      <section>
+        <h3>Azioni personalizzate</h3>
+        <p style="color:var(--testo2);font-size:12px;margin-top:0">
+          Comandi git salvati, eseguibili con un clic dal Terminale (scrivi il comando
+          senza «git», es. <code>fetch --all --prune</code>).
+        </p>
+        {#each stato.azioniGit as a, i}
+          <div class="remoto-riga">
+            <span class="r-nome">{a.nome}</span>
+            <span style="flex:1;color:var(--testo2);font-size:11px;font-family:ui-monospace,monospace">git {a.comando}</span>
+            <button class="pericolo" onclick={() => stato.rimuoviAzione(i)}>✕</button>
+          </div>
+        {/each}
+        <div class="remoto-riga nuovo">
+          <input bind:value={azNome} placeholder="nome (es. Sync)" />
+          <input bind:value={azComando} placeholder="comando (es. pull --rebase)" />
+          <button class="primario" onclick={aggiungiAzione}>Aggiungi</button>
         </div>
       </section>
 
@@ -210,6 +269,25 @@
             <div class="reflog-riga"><span class="hash">{r.id_breve}</span> {r.messaggio}</div>
           {/each}
         </div>
+      </section>
+
+      <section>
+        <h3>Sicurezza rete</h3>
+        <label class="sic-toggle">
+          <input type="checkbox" checked={stato.tlsInsicuro} onchange={(e) => stato.cambiaTlsInsicuro(e.target.checked)} />
+          <span>Disabilita la verifica del certificato TLS/SSH</span>
+        </label>
+        {#if stato.tlsInsicuro}
+          <div class="sic-avviso">
+            ⚠ <b>Attenzione:</b> fetch/pull/push/clone <b>non</b> verificheranno il certificato
+            del server. Usalo solo con server interni fidati (certificati self-signed):
+            disattiva la protezione contro attacchi man-in-the-middle.
+          </div>
+        {:else}
+          <p style="color:var(--testo2);font-size:12px;margin:6px 0 0">
+            Utile per server aziendali con certificati self-signed. Tienilo spento se non ti serve.
+          </p>
+        {/if}
       </section>
 
       <section>

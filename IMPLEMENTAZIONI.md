@@ -4,6 +4,173 @@ Interfaccia grafica moderna per Git. Rust + Tauri 2 + Svelte 5.
 Stessa impalcatura di Oxiterm (workspace Cargo `core` + `src-tauri`, CI verso repo
 privato `oops` + repo pubblico `oops-dist` con artefatti firmati).
 
+## v0.9.0 (2026-07-18) — Rifiniture (le voci 🟦 della roadmap)
+
+Completate le rifiniture rimaste. Build: `cargo test -p oops-core` (12 verdi),
+`cargo build -p oops` OK, `npm run build` OK.
+
+### core/
+- `contenuto.rs` (nuovo) — lettura file per le anteprime: `testo_lavoro` (markdown),
+  `b64_lavoro`/`b64_head` (immagini in base64, con encoder base64 fatto in casa + test).
+
+### src-tauri/ — comandi `leggi_testo_lavoro`, `leggi_b64_lavoro`, `leggi_b64_head`.
+
+### src/ (frontend)
+- **Diff**: toggle **Anteprima** — Markdown renderizzato (mini-parser in `util.js`) e
+  **confronto immagini prima/dopo** (HEAD vs working, con sfondo a scacchi).
+- **App**: **Redo** (Ctrl+Shift+Z) che ripristina lo stato prima dell'Undo (cattura
+  HEAD e `reset --hard`), con pulsante in toolbar.
+- **Cronologia**: **hover card** ricca sul commit (SHA, autore+email, data, genitori,
+  ref); **grafo "live"**: le linee si disegnano quando entra un nuovo commit.
+- **Impostazioni** + **Terminale**: **Azioni personalizzate** (comandi git salvati in
+  localStorage, eseguibili con un clic dal Terminale).
+- `util.js` — `markdownToHtml`, `mimeDa`, `ESTENSIONI_IMG`.
+- `stato.svelte.js` — `azioniGit` (persistite), `redoOid`.
+
+## v0.8.0 (2026-07-18) — Completamento roadmap "offline" + AI (Anthropic)
+
+Seconda grande tranche: implementate tutte le voci realizzabili offline delle Fasi
+8-13 rimaste, più l'assistente AI. Escluse solo (per scelta dell'utente) le
+integrazioni che richiedono servizi esterni: PR, Jira, CI, plugin system. Build:
+`cargo test -p oops-core` (11 verdi), `cargo build -p oops` OK, `npm run build` OK.
+
+### core/
+- `rami.rs` — `lista` ora riporta avanti/indietro e ultimo commit per ramo.
+- `rebase_int.rs` — azione **fixup**; `rimuovi(id)` (drop di un commit in mezzo).
+- `azioni.rs` — cherry-pick **squash** e **move** (copia + rimuovi dall'origine).
+- `diff.rs` — `tra_commit` (Compare with…), `staged_tutto` (per l'AI),
+  `applica_indice` (stage per singola riga), size dei file nelle statistiche.
+- `commit.rs` — `tra(da, a)` per le release notes fra due ref.
+- `insights.rs` — file più modificati + totale righe aggiunte/rimosse.
+- `storage.rs` — workspace (gruppi di repository) in un JSON.
+- `model.rs` — `Workspace`; campi extra su `Ramo`, `StatFile`, `Insights`.
+
+### src-tauri/
+- Comandi: diff_tra_commit, stage_righe, cherry_pick_squash/muovi, commit_rimuovi,
+  note_release, workspace_lista/salva/elimina, genera_commit_ai.
+- **AI Anthropic** via `ureq`: `genera_commit_ai` invia il diff in stage all'API
+  Messages e restituisce il messaggio di commit.
+
+### src/ (frontend)
+- **Diff**: modalità "per riga" (selezione di singole righe → patch parziale → stage).
+- **Cronologia**: zoom, filtro per autore e "solo merge", **Compare with…** (banner
+  di confronto fra due commit).
+- **BarraLaterale**: drop commit→ramo con menu **Copy/Move/Squash**; badge
+  avanti/indietro e tooltip ultimo commit sui rami.
+- **Modifiche**: pulsante **✨ Genera** (messaggio di commit via AI); barre +/- e lingua.
+- **Impostazioni**: sezione **AI (Anthropic)** con token (solo locale) e modello.
+- **Insights**: card "file più modificati" e "righe cambiate".
+- **Avvio**: **Workspace** (crea gruppi di repository dai recenti e apri al volo).
+- `stato.svelte.js` — `aiToken`/`aiModello` persistiti; `impostaAi`.
+
+## v0.7.0 (2026-07-18) — Fasi 7-13 (grande tranche: la roadmap "concorrente di Fork")
+
+Ondata ampia che copre gran parte della roadmap (dettagli e stato in `ROADMAP.md`).
+Build verificata: `cargo test -p oops-core` (11 verdi), `cargo build -p oops` OK,
+`npm run build` OK. Restano fuori (richiedono rete/credenziali) le integrazioni PR/
+Jira/CI, il plugin system e l'AI: scelta consapevole, non implementabili offline.
+
+### core/
+- `rami.rs` — `merge_rami(sorgente, destinazione)` e `rebase_rami(sorgente,
+  destinazione)`: logica del drag&drop ramo-su-ramo (checkout + merge/rebase).
+- `diff.rs` — `stat_lavoro`/`stat_commit` (righe +/- e flag binario per file, per le
+  barre proporzionali) e `calore` (churn per commit, per la heat map).
+- `insights.rs` (nuovo) — statistiche locali: top contributori, attività per settimana
+  e per giorno, linguaggi (per estensione nell'albero HEAD).
+- `azioni.rs` — `annulla_ultima`: undo universale via reflog (reset allo stato prima
+  dell'ultima operazione che ha mosso HEAD).
+- `esegui.rs` (nuovo) — runner del terminale git integrato (`git <args>`, solo il
+  binario git).
+- `model.rs` — nuovi tipi `StatFile`, `Insights`/`Conteggio`, `Calore`.
+
+### src-tauri/ — comandi: merge_rami, rebase_rami, stat_lavoro, stat_commit, calore,
+insights, annulla_ultima, esegui_git.
+
+### src/ (frontend) — nuove viste e componenti
+- **Navigazione** spostata in barra laterale (Panoramica/Modifiche/Cronologia/Insights/
+  Timeline/Terminale) con contatori; **status bar** in basso; **toolbar** con Cerca,
+  Undo, Git Flow.
+- `Insights.svelte` — grafici (contributori, attività settimana/giorno, linguaggi).
+- `Timeline.svelte` — cronologia delle azioni di sessione (da `stato.registra`).
+- `Terminale.svelte` — terminale git con storia comandi (↑/↓) e refresh della UI.
+- `Ricerca.svelte` — palette globale **Ctrl+K** (commit/rami/tag/file → azioni).
+- `GitFlow.svelte` — assistente guidato New Feature → Branch → Commit → Push → Merge.
+- `BarraStat.svelte` — barre "+/-" riusabili; pallino "lingua" per estensione.
+- **Fase 8**: drag&drop ramo-su-ramo con menu **Merge/Rebase**; **menu contestuale**
+  (clic destro) sui commit; **rebase interattivo con drag-to-reorder**.
+- **Fase 9**: barre +/- e lingua nelle liste file (Modifiche + Cronologia).
+- **Fase 12**: **heat map** del grafo (🔥, colore verde→rosso per churn) e animazione
+  "live" all'ingresso dei nuovi commit (each keyed + transizione).
+- Undo con **Ctrl+Z**; salto-al-commit dalla ricerca; File History dai file del commit.
+- `stato.svelte.js` — `vista`, `trascina` (commit/ramo), `heatMap`, `azioni`
+  (timeline), `ricercaAperta`, `commitScelto`, `storiaFile`, `registra`, `vaiACommit`.
+
+## v0.6.1 (2026-07-18) — Fase 7 (avvio): Dashboard "Repository Health"
+
+Prima consegna della Fase 7 (layout "DevStudio"). Build: `cargo test -p oops-core`
+(11 verdi), `cargo build -p oops` OK, `npm run build` OK.
+
+### core/
+- `panoramica.rs` (nuovo) — `panoramica(percorso)` assembla in una sola chiamata
+  ramo/upstream, avanti/indietro, `ultimo_fetch` (mtime di `.git/FETCH_HEAD`),
+  conteggi (rami locali/remoti, tag, stash, conflitti), stato della working tree
+  (in stage / modificati / non tracciati), remoti e ultimo commit. Riusa i moduli
+  esistenti (repo/rami/tag/stash/conflitti/remote/commit).
+- `model.rs` — nuovo tipo `Panoramica`.
+
+### src-tauri/ — nuovo comando `panoramica`.
+
+### src/ (frontend)
+- `Dashboard.svelte` (nuovo) — tessere "Repository Health": badge di salute
+  (verde/giallo/rosso), sincronia ↑↓, ultimo fetch, conflitti, working tree, conteggi
+  rami/tag/stash, ultimo commit con avatar. Tessere cliccabili per saltare alle viste.
+- `App.svelte` — nuova scheda **Panoramica** (vista predefinita all'apertura);
+  scorciatoie rimappate Ctrl+1 Panoramica / Ctrl+2 Modifiche / Ctrl+3 Cronologia.
+- `api.js` — `panoramica`.
+- `ROADMAP.md` (nuovo) — piano storico delle fasi (7→13+) con la visione completa.
+
+## v0.6.0 (2026-07-18) — Fase 6 (feature "stile Fork": grafo, drag&drop, conflitti)
+
+Prima tranche del piano "concorrente di Fork/SourceTree": grafo moderno, cherry-pick
+drag&drop, merge viewer e risoluzione conflitti a blocchi. Build verificata:
+`cargo test -p oops-core` OK, `cargo build -p oops` OK, `npm run build` OK.
+
+### core/
+- `model.rs` — `VoceLog` arricchita: `timestamp` (Unix, per il tempo relativo) e
+  `decori: Vec<Riferimento>` al posto di `riferimenti: Vec<String>`. Nuovo tipo
+  `Riferimento { nome, tipo }` con tipo "testa" (HEAD), "locale", "remoto" o "tag".
+- `commit.rs` — `mappa_riferimenti` ora classifica i ref per tipo (branch/remote/tag)
+  e aggiunge HEAD; `in_voce` ordina i badge (HEAD → locali → remoti → tag) e popola
+  timestamp/decori.
+- `azioni.rs` — `cherry_pick_su(percorso, id, ramo)`: checkout del ramo + cherry-pick
+  (logica dietro il drag&drop di un commit su un ramo).
+- `diff.rs` — `commit_vs_genitore(percorso, id, genitore, ignora_spazi)`: diff di un
+  commit rispetto a un genitore scelto (per vedere i due lati di un merge).
+
+### src-tauri/ — nuovi comandi `cherry_pick_su`, `diff_commit_genitore`.
+
+### src/ (frontend)
+- `lib/util.js` (nuovo) — avatar deterministici (iniziali + colore da email),
+  `tempoRelativo` ("3 h fa"), e `calcolaGrafo` che produce le corsie del grafo con i
+  segmenti (linee/curve) da disegnare riga per riga.
+- `Cronologia.svelte` — grafo a corsie con **curve di Bézier** tra i nodi, **avatar**
+  dell'autore, **badge dei ref** colorati per tipo (stile Fork), **tempo relativo**;
+  righe **trascinabili** (drag&drop) e **merge viewer** (scelta del genitore da
+  confrontare per i commit di merge).
+- `BarraLaterale.svelte` — i rami locali sono **bersagli di drop**: trascinaci un
+  commit per fare cherry-pick su quel ramo (con evidenziazione del bersaglio).
+- `MergeEditor.svelte` — riscritto **a blocchi**: il file viene spezzato nei suoi
+  conflitti; per ognuno si sceglie *Accetta nostra / loro / entrambi / manuale*
+  (colonne Nostra/Base/Loro), con conteggio "risolti" e salvataggio solo a conflitti
+  chiusi. Sostituisce la copia dell'intero file.
+- `stato.svelte.js` — `trascina` (commit in trascinamento, per evidenziare i bersagli).
+- `api.js` — `cherryPickSu`, `diffCommitGenitore`.
+
+### Indagini di mercato (in `mockups/` i riferimenti visivi: Fork, GitKraken, DevStudio)
+- SourceTree: stagnante (UI ferma, no Linux, no 3-way conflitti, lento su repo grandi).
+  Sorpassi possibili: conflict resolver interno, undo universale, prestazioni, Linux,
+  no login obbligatorio, AI. Vedi roadmap Fase 7+.
+
 ## v0.5.0 (2026-06-14) — Fase 5 (tutto il resto: punti 1-8)
 
 Implementati i punti 1-8 della roadmap residua (LFS e bisect esclusi: LFS richiede

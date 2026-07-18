@@ -11,6 +11,16 @@ pub struct RepoRecente {
     pub nome: String,
 }
 
+/// Un "workspace": un gruppo di repository che si aprono/gestiscono insieme
+/// (es. Backend, Frontend, Database, Documentazione).
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Workspace {
+    /// Nome del gruppo.
+    pub nome: String,
+    /// Percorsi dei repository che ne fanno parte.
+    pub percorsi: Vec<String>,
+}
+
 /// In quale stato si trova un file rispetto a Git.
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -72,10 +82,24 @@ pub struct VoceLog {
     pub email: String,
     /// Data del commit come testo (AAAA-MM-GG HH:MM).
     pub data: String,
+    /// Timestamp Unix del commit: serve al frontend per il "tempo relativo"
+    /// (es. "3 ore fa") e per i tooltip con l'ora esatta.
+    pub timestamp: i64,
     /// Hash abbreviati dei genitori (più di uno = commit di merge).
     pub genitori: Vec<String>,
-    /// Nomi di rami/tag che puntano a questo commit (decorazioni del grafo).
-    pub riferimenti: Vec<String>,
+    /// Riferimenti (rami locali/remoti, tag, HEAD) che puntano a questo commit,
+    /// con il loro tipo: servono a disegnare i "badge" colorati nel grafo.
+    pub decori: Vec<Riferimento>,
+}
+
+/// Un riferimento (decorazione) che punta a un commit nel grafo della cronologia.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Riferimento {
+    /// Nome mostrato (es. "main", "origin/main", "v1.0", "HEAD").
+    pub nome: String,
+    /// Tipo del riferimento: "testa" (HEAD), "locale", "remoto" o "tag".
+    /// Il frontend lo usa per scegliere colore e icona del badge.
+    pub tipo: String,
 }
 
 /// Un ramo (locale o remoto).
@@ -87,6 +111,14 @@ pub struct Ramo {
     pub corrente: bool,
     /// true se è un ramo remoto.
     pub remoto: bool,
+    /// Commit avanti rispetto all'upstream (solo rami locali con upstream).
+    pub avanti: usize,
+    /// Commit indietro rispetto all'upstream (solo rami locali con upstream).
+    pub indietro: usize,
+    /// Titolo dell'ultimo commit del ramo.
+    pub ultimo_titolo: String,
+    /// Timestamp Unix dell'ultimo commit (per il tempo relativo).
+    pub ultimo_quando: i64,
 }
 
 /// Una voce della lista degli stash (modifiche messe da parte).
@@ -182,6 +214,93 @@ pub struct MossaRebase {
     pub azione: String,
     /// Nuovo messaggio (per reword/squash).
     pub messaggio: Option<String>,
+}
+
+/// Quadro di sintesi del repository per la Dashboard ("Repository Health"):
+/// una sola chiamata raccoglie ciò che si vuole vedere appena si apre un repo.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Panoramica {
+    /// Ramo corrente (o "(testa staccata)").
+    pub ramo: String,
+    /// Nome dell'upstream configurato (es. "origin/main"), se c'è.
+    pub upstream: Option<String>,
+    /// Commit avanti rispetto all'upstream (da spingere).
+    pub avanti: usize,
+    /// Commit indietro rispetto all'upstream (da scaricare).
+    pub indietro: usize,
+    /// true se il repository non ha ancora nessun commit.
+    pub vuoto: bool,
+    /// Timestamp Unix dell'ultimo fetch (mtime di FETCH_HEAD); 0 se sconosciuto.
+    pub ultimo_fetch: i64,
+    /// Numero di rami locali.
+    pub rami_locali: usize,
+    /// Numero di rami remoti.
+    pub rami_remoti: usize,
+    /// Numero di tag.
+    pub tag: usize,
+    /// Numero di stash.
+    pub stash: usize,
+    /// Numero di file in conflitto (0 = nessun merge/rebase in corso).
+    pub conflitti: usize,
+    /// File pronti al commit (in stage).
+    pub in_stage: usize,
+    /// File modificati/cancellati non ancora in stage (esclusi i non tracciati).
+    pub modificati: usize,
+    /// File non tracciati.
+    pub non_tracciati: usize,
+    /// Remoti configurati (nome + URL).
+    pub remoti: Vec<Remoto>,
+    /// L'ultimo commit (HEAD), per mostrarlo in evidenza. None se il repo è vuoto.
+    pub ultimo_commit: Option<VoceLog>,
+}
+
+/// Righe aggiunte/rimosse di un file (per le barre proporzionali "+/-").
+#[derive(Clone, Serialize, Deserialize)]
+pub struct StatFile {
+    /// Percorso del file.
+    pub percorso: String,
+    /// Righe aggiunte.
+    pub aggiunte: usize,
+    /// Righe rimosse.
+    pub rimozioni: usize,
+    /// true se è un file binario (niente conteggio righe sensato).
+    pub binario: bool,
+    /// Dimensione del file in byte (0 se cancellato o sconosciuto).
+    pub dimensione: u64,
+}
+
+/// Una coppia etichetta→valore per i grafici degli Insights.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Conteggio {
+    pub etichetta: String,
+    pub valore: usize,
+}
+
+/// Statistiche del repository (Repository Insights).
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Insights {
+    /// Numero di commit considerati.
+    pub totale_commit: usize,
+    /// Top contributori (autore → numero di commit).
+    pub contributori: Vec<Conteggio>,
+    /// Commit per settimana, dalle ~12 settimane fa a oggi (per lo sparkline).
+    pub per_settimana: Vec<usize>,
+    /// Distribuzione dei file per linguaggio/estensione nell'albero corrente.
+    pub lingue: Vec<Conteggio>,
+    /// Churn (righe cambiate) per giorno della settimana [Lun..Dom].
+    pub per_giorno: Vec<usize>,
+    /// File toccati più spesso (per numero di commit che li modificano).
+    pub file_caldi: Vec<Conteggio>,
+    /// Righe totali aggiunte e rimosse nel periodo analizzato.
+    pub aggiunte: usize,
+    pub rimozioni: usize,
+}
+
+/// Churn (righe cambiate) di un commit, per la "heat map" del grafo.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Calore {
+    pub id: String,
+    pub churn: usize,
 }
 
 /// Una riga del blame: chi e quando ha toccato l'ultima volta quella riga.

@@ -1,6 +1,6 @@
 [package]
 name = "oops"
-version = "0.5.0"
+version = "0.9.1"
 description = "Oops - un'interfaccia grafica moderna per Git"
 authors = ["Antonio Russo"]
 license = "MIT"
@@ -30,3 +30,5 @@ tauri-plugin-process = "2"
 oops-core = { path = "../core" }
 # Osserva i cambiamenti sul filesystem per aggiornare la UI da solo.
 notify = "6"
+# Client HTTP leggero per l'assistente AI (chiamata all'API di Anthropic).
+ureq = { version = "2", features = ["json"] }

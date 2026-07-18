@@ -53,20 +53,25 @@ pub fn esegui(percorso: &str, base_id: &str, mosse: Vec<MossaRebase>) -> Result<
         let albero_oid = indice.write_tree_to(&repo).map_err(|e| e.to_string())?;
         let albero = repo.find_tree(albero_oid).map_err(|e| e.to_string())?;
 
-        // "squash" sul primo commit non ha senso: lo trattiamo come "pick".
-        let squash = mossa.azione == "squash" && primo_fatto;
+        // "squash"/"fixup" sul primo commit non hanno senso: diventano "pick".
+        let fondi = (mossa.azione == "squash" || mossa.azione == "fixup") && primo_fatto;
 
-        let nuovo = if squash {
-            // Fonde nel commit precedente: stesso genitore, messaggi uniti.
+        let nuovo = if fondi {
+            // Fonde nel commit precedente: stesso genitore. "squash" unisce i
+            // messaggi (o usa quello scelto); "fixup" tiene solo il precedente.
             let padre_oid = corrente.parent_id(0).map_err(|e| e.to_string())?;
             let padre = repo.find_commit(padre_oid).map_err(|e| e.to_string())?;
-            let messaggio = mossa.messaggio.clone().unwrap_or_else(|| {
-                format!(
-                    "{}\n\n{}",
-                    corrente.message().unwrap_or(""),
-                    commit.message().unwrap_or("")
-                )
-            });
+            let messaggio = if mossa.azione == "fixup" {
+                corrente.message().unwrap_or("").to_string()
+            } else {
+                mossa.messaggio.clone().unwrap_or_else(|| {
+                    format!(
+                        "{}\n\n{}",
+                        corrente.message().unwrap_or(""),
+                        commit.message().unwrap_or("")
+                    )
+                })
+            };
             repo.commit(None, &commit.author(), &firma, &messaggio, &albero, &[&padre])
         } else {
             let messaggio = if mossa.azione == "reword" {
@@ -86,6 +91,54 @@ pub fn esegui(percorso: &str, base_id: &str, mosse: Vec<MossaRebase>) -> Result<
     // Sposta il ramo corrente sul nuovo ultimo commit e aggiorna la cartella.
     sposta_ramo(&repo, &nome_ref, &corrente)?;
     Ok(format!("rebase interattivo completato ({applicati} commit)"))
+}
+
+/// Rimuove un commit dalla storia del ramo corrente riapplicando i commit più
+/// recenti sopra al genitore del commit tolto (drop "in mezzo"). È il motore del
+/// cherry-pick "Move" (copia altrove + rimuovi da qui). Solo storie lineari.
+pub fn rimuovi(percorso: &str, id: &str) -> Result<String, String> {
+    let repo = crate::apri(percorso)?;
+    let oid = Oid::from_str(id).map_err(|e| e.to_string())?;
+    let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+    let padre = commit.parent(0).map_err(|_| "non si può rimuovere il primo commit".to_string())?;
+
+    let head = repo.head().map_err(|e| e.to_string())?;
+    let nome_ref = head.name().ok_or("HEAD staccata")?.to_string();
+    let punta = head.peel_to_commit().map_err(|e| e.to_string())?;
+
+    // Raccoglie i commit da `punta` fino (escluso) a `commit`: sono quelli da
+    // riapplicare, dal più vecchio al più recente.
+    let mut da_riapplicare = Vec::new();
+    let mut c = punta.clone();
+    while c.id() != commit.id() {
+        da_riapplicare.push(c.clone());
+        c = c.parent(0).map_err(|_| "il commit non è nel ramo corrente".to_string())?;
+    }
+    da_riapplicare.reverse();
+
+    let firma = repo
+        .signature()
+        .or_else(|_| git2::Signature::now("Oops", "oops@local"))
+        .map_err(|e| e.to_string())?;
+
+    let mut corrente = padre;
+    for commit in &da_riapplicare {
+        let mut indice = repo
+            .cherrypick_commit(commit, &corrente, 0, None)
+            .map_err(|e| e.to_string())?;
+        if indice.has_conflicts() {
+            return Err("conflitto durante la rimozione del commit: annullato".into());
+        }
+        let albero_oid = indice.write_tree_to(&repo).map_err(|e| e.to_string())?;
+        let albero = repo.find_tree(albero_oid).map_err(|e| e.to_string())?;
+        let nuovo = repo
+            .commit(None, &commit.author(), &firma, commit.message().unwrap_or(""), &albero, &[&corrente])
+            .map_err(|e| e.to_string())?;
+        corrente = repo.find_commit(nuovo).map_err(|e| e.to_string())?;
+    }
+
+    sposta_ramo(&repo, &nome_ref, &corrente)?;
+    Ok("commit rimosso".into())
 }
 
 /// Aggiorna il riferimento del ramo e ricarica la cartella di lavoro.

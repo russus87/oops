@@ -1,7 +1,39 @@
 // Versione dell'app e changelog, mostrati nel pannello Info.
-export const VERSIONE = "0.5.0";
+export const VERSIONE = "0.9.1";
 
 export const changelog = [
+  {
+    versione: "0.9.1",
+    note: [
+      "Impostazioni → Sicurezza rete: disabilita la verifica del certificato TLS/SSH (per server interni self-signed)",
+    ],
+  },
+  {
+    versione: "0.9.0",
+    note: [
+      "Anteprima Markdown e confronto immagini (prima/dopo) nel pannello diff",
+      "Redo (Ctrl+Shift+Z) oltre all'Undo universale",
+      "Hover card ricca sul commit (SHA, autore, data, genitori, ref)",
+      "Grafo 'live': le linee si disegnano all'ingresso dei nuovi commit",
+      "Azioni personalizzate (comandi git salvati) eseguibili dal Terminale",
+    ],
+  },
+  {
+    versione: "0.8.0",
+    note: [
+      "Grafo moderno: corsie con curve, avatar, badge dei ref, tempo relativo, zoom",
+      "Heat map del grafo e animazione dei nuovi commit",
+      "Drag&drop: commit→ramo (Copy/Move/Squash) e ramo→ramo (Merge/Rebase)",
+      "Menu contestuale sul commit e 'Confronta con…' fra due commit",
+      "Rebase interattivo con drag&drop delle righe (+ fixup)",
+      "Dashboard 'Repository Health' all'apertura",
+      "Stage per singola riga (oltre a file e hunk), barre +/- e lingua nei file",
+      "Ricerca globale (Ctrl+K), Timeline delle azioni, Terminale git integrato",
+      "Undo universale (Ctrl+Z), Insights, Git Flow Assistant, Workspace multi-repo",
+      "Assistente AI (Anthropic): genera il messaggio di commit dal diff in stage",
+      "Ahead/behind e ultimo commit per ramo; release notes fra due tag",
+    ],
+  },
   {
     versione: "0.5.0",
     note: [

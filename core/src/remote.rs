@@ -8,15 +8,23 @@ use std::path::Path;
 
 use git2::build::CheckoutBuilder;
 use git2::{
-    Cred, CredentialType, FetchOptions, PushOptions, RemoteCallbacks, Repository,
+    CertificateCheckStatus, Cred, CredentialType, FetchOptions, PushOptions, RemoteCallbacks,
+    Repository,
 };
 
 use crate::model::{Credenziali, Remoto};
 
 /// Crea i callback di rete con la gestione delle credenziali.
 /// Se `cred` è presente usa quelle; altrimenti ricade su agent/credential helper.
-pub fn costruisci_callbacks(cred: Option<Credenziali>) -> RemoteCallbacks<'static> {
+/// Se `insicuro` è true, la verifica del certificato TLS (HTTPS) e della chiave
+/// host (SSH) viene DISABILITATA: comodo per server interni con certificati
+/// self-signed, ma espone al rischio man-in-the-middle. Da usare con cautela.
+pub fn costruisci_callbacks(cred: Option<Credenziali>, insicuro: bool) -> RemoteCallbacks<'static> {
     let mut cb = RemoteCallbacks::new();
+    if insicuro {
+        // Accetta qualsiasi certificato/host senza verificarlo.
+        cb.certificate_check(|_cert, _host| Ok(CertificateCheckStatus::CertificateOk));
+    }
     cb.credentials(move |url, utente, permessi| {
         if permessi.contains(CredentialType::SSH_KEY) {
             // Chiave SSH: se l'utente ha indicato un file di chiave lo usiamo,
@@ -93,11 +101,16 @@ pub fn rimuovi(percorso: &str, nome: &str) -> Result<(), String> {
 }
 
 /// Carica tutte le tag sul remoto.
-pub fn push_tags(percorso: &str, remoto: &str, cred: Option<Credenziali>) -> Result<(), String> {
+pub fn push_tags(
+    percorso: &str,
+    remoto: &str,
+    cred: Option<Credenziali>,
+    insicuro: bool,
+) -> Result<(), String> {
     let repo = crate::apri(percorso)?;
     let mut r = repo.find_remote(remoto).map_err(|e| e.to_string())?;
     let mut po = PushOptions::new();
-    po.remote_callbacks(costruisci_callbacks(cred));
+    po.remote_callbacks(costruisci_callbacks(cred, insicuro));
     r.push(&["refs/tags/*:refs/tags/*"], Some(&mut po))
         .map_err(|e| e.to_string())
 }
@@ -108,22 +121,28 @@ pub fn elimina_ramo_remoto(
     remoto: &str,
     ramo: &str,
     cred: Option<Credenziali>,
+    insicuro: bool,
 ) -> Result<(), String> {
     let repo = crate::apri(percorso)?;
     let mut r = repo.find_remote(remoto).map_err(|e| e.to_string())?;
     let mut po = PushOptions::new();
-    po.remote_callbacks(costruisci_callbacks(cred));
+    po.remote_callbacks(costruisci_callbacks(cred, insicuro));
     // Una refspec con il lato sinistro vuoto cancella il ref remoto.
     r.push(&[format!(":refs/heads/{ramo}")], Some(&mut po))
         .map_err(|e| e.to_string())
 }
 
 /// Scarica gli aggiornamenti dal remoto senza toccare i file (git fetch).
-pub fn fetch(percorso: &str, remoto: &str, cred: Option<Credenziali>) -> Result<(), String> {
+pub fn fetch(
+    percorso: &str,
+    remoto: &str,
+    cred: Option<Credenziali>,
+    insicuro: bool,
+) -> Result<(), String> {
     let repo = crate::apri(percorso)?;
     let mut r = repo.find_remote(remoto).map_err(|e| e.to_string())?;
     let mut fo = FetchOptions::new();
-    fo.remote_callbacks(costruisci_callbacks(cred));
+    fo.remote_callbacks(costruisci_callbacks(cred, insicuro));
     // Passando una lista vuota di refspec, git2 usa quelle del remoto.
     let refspec: [&str; 0] = [];
     r.fetch(&refspec, Some(&mut fo), None).map_err(|e| e.to_string())
@@ -137,11 +156,12 @@ pub fn pull(
     remoto: &str,
     strategia: &str,
     cred: Option<Credenziali>,
+    insicuro: bool,
 ) -> Result<String, String> {
     let repo = crate::apri(percorso)?;
 
     // Prima un fetch.
-    fetch(percorso, remoto, cred)?;
+    fetch(percorso, remoto, cred, insicuro)?;
 
     // Ramo corrente e suo corrispondente remoto.
     let head = repo.head().map_err(|e| e.to_string())?;
@@ -250,6 +270,7 @@ pub fn push(
     remoto: &str,
     forza: bool,
     cred: Option<Credenziali>,
+    insicuro: bool,
 ) -> Result<(), String> {
     let repo = crate::apri(percorso)?;
     let head = repo.head().map_err(|e| e.to_string())?;
@@ -257,7 +278,7 @@ pub fn push(
 
     let mut r = repo.find_remote(remoto).map_err(|e| e.to_string())?;
     let mut po = PushOptions::new();
-    po.remote_callbacks(costruisci_callbacks(cred));
+    po.remote_callbacks(costruisci_callbacks(cred, insicuro));
 
     // Il "+" iniziale indica un push forzato.
     let prefisso = if forza { "+" } else { "" };
